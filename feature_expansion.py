@@ -24,7 +24,7 @@ class FeatureExpander(MessagePassing):
     def __init__(self, degree=True, onehot_maxdeg=0, AK=1,
                  centrality=False, remove_edges="none",
                  edge_noises_add=0, edge_noises_delete=0, group_degree=0):
-        super(FeatureExpander, self).__init__('add', 'source_to_target')
+        super(FeatureExpander, self).__init__('add')
         self.degree = degree
         self.onehot_maxdeg = onehot_maxdeg
         self.AK = AK

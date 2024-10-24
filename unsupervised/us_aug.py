@@ -65,12 +65,13 @@ class TUDataset_aug(InMemoryDataset):
 
     def __init__(self, root, name, transform=None, pre_transform=None,
                  pre_filter=None, use_node_attr=False, use_edge_attr=False,
-                 cleaned=False, aug=None):
+                 cleaned=False):
         self.name = name
         self.cleaned = cleaned
         super(TUDataset_aug, self).__init__(root, transform, pre_transform,
                                         pre_filter)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices, sizes = torch.load(self.processed_paths[0])
+        # self.data, self.slices = torch.load(self.processed_paths[0])
         if self.data.x is not None and not use_node_attr:
             num_node_attributes = self.num_node_attributes
             self.data.x = self.data.x[:, num_node_attributes:]
@@ -100,7 +101,7 @@ class TUDataset_aug(InMemoryDataset):
             assert False
             '''
 
-        self.aug = aug
+        # self.aug = aug
 
     @property
     def raw_dir(self):
@@ -162,8 +163,8 @@ class TUDataset_aug(InMemoryDataset):
         os.rename(osp.join(folder, self.name), self.raw_dir)
 
     def process(self):
-        self.data, self.slices = read_tu_data(self.raw_dir, self.name)
-
+        self.data, self.slices, sizes = read_tu_data(self.raw_dir, self.name)
+        
         if self.pre_filter is not None:
             data_list = [self.get(idx) for idx in range(len(self))]
             data_list = [data for data in data_list if self.pre_filter(data)]
@@ -174,7 +175,7 @@ class TUDataset_aug(InMemoryDataset):
             data_list = [self.pre_transform(data) for data in data_list]
             self.data, self.slices = self.collate(data_list)
 
-        torch.save((self.data, self.slices), self.processed_paths[0])
+        torch.save((self.data, self.slices, sizes), self.processed_paths[0])
 
     def __repr__(self):
         return '{}({})'.format(self.name, len(self))
@@ -185,7 +186,7 @@ class TUDataset_aug(InMemoryDataset):
         if hasattr(self.data, '__num_nodes__'):
             data.num_nodes = self.data.__num_nodes__[0]
 
-        for key in self.data.keys:
+        for key in self.slices.keys():
             item, slices = self.data[key], self.slices[key]
             if torch.is_tensor(item):
                 s = list(repeat(slice(None), item.dim()))
@@ -206,7 +207,7 @@ class TUDataset_aug(InMemoryDataset):
         if hasattr(self.data, '__num_nodes__'):
             data.num_nodes = self.data.__num_nodes__[idx]
 
-        for key in self.data.keys:
+        for key in self.slices.keys():
             item, slices = self.data[key], self.slices[key]
             if torch.is_tensor(item):
                 s = list(repeat(slice(None), item.dim()))
@@ -228,70 +229,60 @@ class TUDataset_aug(InMemoryDataset):
         sl = torch.tensor([[n,n] for n in range(node_num)]).t()
         data.edge_index = torch.cat((data.edge_index, sl), dim=1)
 
-        if self.aug == 'dnodes':
-            data_aug = drop_nodes(deepcopy(data))
-        elif self.aug == 'pedges':
-            data_aug = permute_edges(deepcopy(data))
-        elif self.aug == 'subgraph':
-            data_aug = subgraph(deepcopy(data))
-        elif self.aug == 'mask_nodes':
-            data_aug = mask_nodes(deepcopy(data))
-        elif self.aug == 'none':
-            """
-            if data.edge_index.max() > data.x.size()[0]:
-                print(data.edge_index)
-                print(data.x.size())
-                assert False
-            """
-            data_aug = deepcopy(data)
-            data_aug.x = torch.ones((data.edge_index.max()+1, 1))
+        # if self.aug == 'dnodes':
+        #     data_aug = drop_nodes(deepcopy(data))
+        # elif self.aug == 'pedges':
+        #     data_aug = permute_edges(deepcopy(data))
+        # elif self.aug == 'subgraph':
+        #     data_aug = subgraph(deepcopy(data))
+        # elif self.aug == 'mask_nodes':
+        #     data_aug = mask_nodes(deepcopy(data))
+        # elif self.aug == 'none':
+        #     data_aug = deepcopy(data)
+        #     data_aug.x = torch.ones((data.edge_index.max()+1, 1))
 
-        elif self.aug == 'random2':
-            n = np.random.randint(2)
-            if n == 0:
-               data_aug = drop_nodes(deepcopy(data))
-            elif n == 1:
-               data_aug = subgraph(deepcopy(data))
-            else:
-                print('sample error')
-                assert False
+        # elif self.aug == 'random2':
+        #     n = np.random.randint(2)
+        #     if n == 0:
+        #        data_aug = drop_nodes(deepcopy(data))
+        #     elif n == 1:
+        #        data_aug = subgraph(deepcopy(data))
+        #     else:
+        #         print('sample error')
+        #         assert False
+        # elif self.aug == 'random3':
+        #     n = np.random.randint(3)
+        #     if n == 0:
+        #        data_aug = drop_nodes(deepcopy(data))
+        #     elif n == 1:
+        #        data_aug = permute_edges(deepcopy(data))
+        #     elif n == 2:
+        #        data_aug = subgraph(deepcopy(data))
+        #     else:
+        #         print('sample error')
+        #         assert False
 
-
-        elif self.aug == 'random3':
-            n = np.random.randint(3)
-            if n == 0:
-               data_aug = drop_nodes(deepcopy(data))
-            elif n == 1:
-               data_aug = permute_edges(deepcopy(data))
-            elif n == 2:
-               data_aug = subgraph(deepcopy(data))
-            else:
-                print('sample error')
-                assert False
-
-
-        elif self.aug == 'random4':
-            n = np.random.randint(4)
-            if n == 0:
-               data_aug = drop_nodes(deepcopy(data))
-            elif n == 1:
-               data_aug = permute_edges(deepcopy(data))
-            elif n == 2:
-               data_aug = subgraph(deepcopy(data))
-            elif n == 3:
-               data_aug = mask_nodes(deepcopy(data))
-            else:
-                print('sample error')
-                assert False
-
-        else:
-            print('augmentation error')
-            assert False
+        # elif self.aug == 'random4':
+        #     n = np.random.randint(4)
+        #     if n == 0:
+        #        data_aug = drop_nodes(deepcopy(data))
+        #     elif n == 1:
+        #        data_aug = permute_edges(deepcopy(data))
+        #     elif n == 2:
+        #        data_aug = subgraph(deepcopy(data))
+        #     elif n == 3:
+        #        data_aug = mask_nodes(deepcopy(data))
+        #     else:
+        #         print('sample error')
+        #         assert False
+        # else:
+        #     print('augmentation error')
+        #     assert False
 
         # print(data, data_aug)
         # assert False
 
-        return data, data_aug
+        return data
 
 
 def drop_nodes(data):
@@ -311,7 +302,7 @@ def drop_nodes(data):
     adj[edge_index[0], edge_index[1]] = 1
     adj[idx_drop, :] = 0
     adj[:, idx_drop] = 0
-    edge_index = torch.nonzero(adj, as_tuple=False).t()
+    edge_index = adj.nonzero().t()
 
     data.edge_index = edge_index
 
@@ -376,7 +367,7 @@ def subgraph(data):
     adj[edge_index[0], edge_index[1]] = 1
     adj[idx_drop, :] = 0
     adj[:, idx_drop] = 0
-    edge_index = torch.nonzero(adj, as_tuple=False).t()
+    edge_index = adj.nonzero().t()
 
     data.edge_index = edge_index
 
