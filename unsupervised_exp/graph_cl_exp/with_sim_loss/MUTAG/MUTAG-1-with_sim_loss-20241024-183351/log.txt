@@ -1,0 +1,7 @@
+2024-10-24 18:33:51,118 Namespace(dataset='MUTAG', local=False, glob=False, prior=False, lr=0.001, gpu=0, num_gc_layers=5, hidden_dim=128, aug='dnodes', seed=1, exp='graph_cl_exp', save='unsupervised_exp/graph_cl_exp/with_sim_loss/MUTAG/MUTAG-1-with_sim_loss-20241024-183351', batch_size=128, epochs=30)
+2024-10-24 18:33:51,727 ================
+2024-10-24 18:33:51,727 lr: 0.001
+2024-10-24 18:33:51,727 num_features: 101
+2024-10-24 18:33:51,728 hidden_dim: 128
+2024-10-24 18:33:51,728 num_gc_layers: 5
+2024-10-24 18:33:51,728 ================

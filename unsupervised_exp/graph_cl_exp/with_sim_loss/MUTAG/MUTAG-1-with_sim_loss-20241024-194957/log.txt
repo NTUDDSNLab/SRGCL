@@ -1,0 +1,24 @@
+2024-10-24 19:49:57,708 Namespace(dataset='MUTAG', local=False, glob=False, prior=False, lr=0.001, gpu=0, num_gc_layers=5, hidden_dim=128, aug='dnodes', seed=1, exp='graph_cl_exp', save='unsupervised_exp/graph_cl_exp/with_sim_loss/MUTAG/MUTAG-1-with_sim_loss-20241024-194957', batch_size=128, epochs=30)
+2024-10-24 19:49:58,189 ================
+2024-10-24 19:49:58,189 lr: 0.001
+2024-10-24 19:49:58,189 num_features: 7
+2024-10-24 19:49:58,189 hidden_dim: 128
+2024-10-24 19:49:58,189 num_gc_layers: 5
+2024-10-24 19:49:58,189 ================
+2024-10-24 19:49:59,081 Epoch: 1, Loss: 3.3703
+2024-10-24 19:49:59,146 Epoch: 2, Loss: 2.8444
+2024-10-24 19:49:59,195 Epoch: 3, Loss: 2.6456
+2024-10-24 19:49:59,241 Epoch: 4, Loss: 2.7657
+2024-10-24 19:49:59,296 Epoch: 5, Loss: 2.5703
+2024-10-24 19:49:59,425 Epoch: 6, Loss: 2.5856
+2024-10-24 19:49:59,501 Epoch: 7, Loss: 2.4798
+2024-10-24 19:49:59,555 Epoch: 8, Loss: 2.3654
+2024-10-24 19:49:59,614 Epoch: 9, Loss: 2.4350
+2024-10-24 19:49:59,658 Epoch: 10, Loss: 2.3946
+2024-10-24 19:50:00,328 **************************************************
+2024-10-24 19:50:00,328 Evaluating embedding...
+2024-10-24 19:50:00,328 Epoch: 30, Test Acc: 88.25 ± 6.27
+2024-10-24 19:50:00,328 First stage finished at epoch 10
+
+2024-10-24 19:50:00,756 Number of good augmented data: 568
+

@@ -337,7 +337,7 @@ def cl_exp(args):
             format=log_format, datefmt='%m/%d %I:%M:%S %p')
     fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
     fh.setFormatter(logging.Formatter(log_format))
-    logger = logging.getLogger()
+    logger = c.getLogger()
     logger.addHandler(fh)
     logger.info(args)
 
@@ -358,13 +358,29 @@ def cl_exp(args):
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     data_eval_loader = DataLoader(dataset, batch_size=batch_size)
 
+    # Multi Phase Training Hyperparameter Setting
+    patience = 2
+    min_delta = 0.01
+    loss_min = float('inf')
+    counter = 0
+    aug_data_ratio = 0.2
+    dataset_len_multiple = 3
+    loss_list = []
+    stage_finish_epochs = []
+
     model = simclr(dataset, args.hidden_dim, args.num_gc_layers, args.prior).to(device)
+    anchor_model = simclr(dataset, args.hidden_dim, args.num_gc_layers, args.prior).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     view_gen1 = ViewGenerator(dataset, args.hidden_dim, GIN_NodeWeightEncoder)
     view_gen2 = ViewGenerator(dataset, args.hidden_dim, GIN_NodeWeightEncoder)
     view_gen1 = view_gen1.to(device)
     view_gen2 = view_gen2.to(device)
+
+    anchor_view_gen1 = ViewGenerator(dataset, args.hidden_dim, GIN_NodeWeightEncoder)
+    anchor_view_gen2 = ViewGenerator(dataset, args.hidden_dim, GIN_NodeWeightEncoder)
+    anchor_view_gen1 = anchor_view_gen1.to(device)
+    anchor_view_gen2 = anchor_view_gen2.to(device)
 
     view_optimizer = optim.Adam([ {'params': view_gen1.parameters()},
                                 {'params': view_gen2.parameters()} ], lr=args.lr
@@ -381,6 +397,10 @@ def cl_exp(args):
     best_test_std = 0
     test_accs = []
 
+    best_test_acc_after = 0
+    best_test_std_after = 0
+    test_accs_after = []
+
     for epoch in range(1, epochs+1):
         # train_loss = train_cl(view_gen1, view_gen2, view_optimizer, model, optimizer, data_loader, device)
         train_loss = train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, optimizer, data_loader, device)
@@ -394,12 +414,127 @@ def cl_exp(args):
             logger.info("*" * 50)
             logger.info("Evaluating embedding...")
             logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
+    logger.info('Before SADA Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
 
-    logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    anchor_model.load_state_dict(model.state_dict())
+    anchor_model.eval()
+    
+    clone_data_list = []
+    good_aug_data_list = []
+    tensor_list = []
+    tmp_list = []
+    
+    # Determined datasets can't add feature, clone a dataset to add index on every graph
+    tmp_dataloader = DataLoader(dataset, batch_size = batch_size)
+    for data in tmp_dataloader:
+        data = data.to(device)
+        data_list = data.to_data_list()
+        for i, graph in enumerate(data_list):
+            #print(len(data_list))
+            #print(graph)
+            # graph.indices[0] = i
+            clone_data_list.append(graph)
+            good_aug_data_list.append(graph)
+            #print(graph)
+    #print(clone_data_list[0])
+    
+    select_dataloader = DataLoader(clone_data_list, batch_size=batch_size, shuffle=True)
+    # Collect good augmented data for new dataset
+    while True:
+        #print(tmp_list)
+        total_data = 0
+        model.eval()
+        for data in select_dataloader:
+            # print(data.indices)
+            # print(data.indices[0])
+            # tmp_index_list = []
+            # for i in range(len(data)):
+            #     tmp_index_list.append(data[i].indices)
+            # print(tmp_index_list)
+            aug_data_num = math.ceil(aug_data_ratio*len(data))
+            data_ori = data.clone()
+            data = data.to(device)
+            data_ori = data_ori.to(device)
+
+            # Augmentation in data list format to prevent can't use function to_data_list
+            data_list = data.to_data_list()
+            aug_data_list = []
+            aug_ratio = 0.2
+            for graph in data_list:
+                #node
+                graph.edge_index, _, graph_node_mask = dropout_node(graph.edge_index, aug_ratio)
+                graph_node_mask = graph_node_mask.cpu().detach().numpy().astype(int)
+                feature_size = graph.x.shape[1]
+                graph_node_mask_2d = np.tile(graph_node_mask, (feature_size, 1))
+                graph_node_mask_2d = torch.from_numpy(np.transpose(graph_node_mask_2d)).to(device)
+                graph.x = graph.x * graph_node_mask_2d
+                aug_data_list.append(graph)
+                # Edge
+                # graph.edge_index, _ = dropout_edge(graph.edge_index, aug_ratio)
+                # aug_data_list.append(graph)
+                # graph.edge_index, _ = add_random_edge(graph.edge_index, aug_ratio)
+                # Attr
+                # graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
+                # aug_data_list.append(graph)
+            
+            data = Batch.from_data_list(aug_data_list)
+
+            # Anchor model calculate distance
+            anchor_x = anchor_model(data_ori)
+            aug_x = anchor_model(data)
+            distances = torch.diag(torch.cdist(anchor_x, aug_x, p=2))
+            #print(distances)
+            values, _ = torch.topk(-distances, aug_data_num)
+            is_used_data = (distances <= -values[-1])
+            #print(values[-1])
+            #print(f'Used data {is_used_data}')
+            tmp_list.append(is_used_data)
+            
+            #print(len(is_used_data))
+            for i in range(len(is_used_data)):
+                if (is_used_data[i] == True):
+                    good_aug_data_list.append(aug_data_list[i])
+        
+        tmp_tensor = tmp_list[0]
+        for i in range(1, len(tmp_list)):
+            tmp_tensor = torch.cat((tmp_tensor, tmp_list[i]), 0)
+        tensor_list.append(tmp_tensor)
+        tmp_list = []
+
+        if (len(good_aug_data_list) >= dataset_len_multiple * batch_size):
+            logger.info("Enough data collected!")
+            break
+    stacked_tensors = torch.stack(tensor_list)
+    true_counts = stacked_tensors.int().sum(dim=0)
+    #print(len(true_counts))
+    zeros = torch.eq(true_counts, 0)
+    num_zeros = torch.sum(zeros)
+    logger.info('Number of zeros in the tensor: {}'.format(num_zeros.item()))
+    
+    
+    # Train new model by aug dataset
+    second_model = simclr(dataset, args.hidden_dim, args.num_gc_layers, args.prior).to(device)
+    logger.info('Number of good augmented data: {}'.format(len(good_aug_data_list)))
+    second_dataloader = DataLoader(good_aug_data_list, batch_size=batch_size, shuffle=True)
+
+    for epoch in range(1, epochs+1):
+        train_loss = train_cl_with_sim_loss(anchor_view_gen1, anchor_view_gen2, view_optimizer, second_model, optimizer, second_dataloader, device)
+        logger.info('Epoch: {}, Loss: {:.4f}'.format(epoch, train_loss))
+        if epoch % log_interval == 0:
+            test_acc_after, test_std_after = eval_acc(model, data_eval_loader, device)
+            test_accs_after.append(test_acc_after)
+            if test_acc_after > best_test_acc_after:
+                best_test_acc_after = test_acc_after
+                best_test_std_after = test_std_after
+            logger.info("*" * 50)
+            logger.info("Evaluating embedding...")
+            logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc_after*100, test_std_after*100))
+
+    logger.info('After SADA Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc_after*100, best_test_std_after*100))
     joint_log_dir = os.path.join('unsupervised_exp', args.exp, save_name)
     joint_log_path = os.path.join(joint_log_dir, joint_log_name)
     with open(joint_log_path, 'a+') as f:
-        f.write('{},{},{:.2f},{:.2f}\n'.format(args.dataset, args.seed, best_test_acc*100, best_test_std*100))
+        f.write('{},{},{:.2f},{:.2f}\n'.format(args.dataset, args.seed, best_test_acc_after*100, best_test_std_after*100))
 
 class simclr_graph_cl(nn.Module):
     def __init__(self, dataset_num_features, hidden_dim, num_gc_layers, prior, alpha=0.5, beta=1., gamma=.1):
@@ -460,8 +595,8 @@ class simclr_graph_cl(nn.Module):
         # Diagonal should be positive
         # pos_sim = sim_matrix[range(batch_size), range(batch_size)]
         # Use index instead of diagnol to determine positive pairs, loss of each graph shoud be mean
-        print("X: ", x.size())
-        print("X_aug: ", x_aug.size())
+        # print("X: ", x.size())
+        # print("X_aug: ", x_aug.size())
         pos_mask = torch.zeros([batch_size, batch_size]).cuda()
         pos_pair_count = torch.zeros([batch_size]).cuda()
         neg_pair_count = torch.ones([batch_size]).cuda()
@@ -641,7 +776,7 @@ def graph_cl_exp(args):
         for i, graph in enumerate(data_list):
             #print(len(data_list))
             #print(graph)
-            graph.indices[0] = i
+            # graph.indices[0] = i
             clone_data_list.append(graph)
             good_aug_data_list.append(graph)
             #print(graph)
@@ -779,20 +914,20 @@ def graph_cl_exp(args):
         accuracies = {'val':[], 'test':[]}
 
         if epoch % log_interval == 0:
-            test_acc, test_std = eval_acc(model, dataloader_eval, device)
-            accuracies['val'].append(test_acc)
-            accuracies['test'].append(test_std)
+            test_acc_after, test_std_after = eval_acc(model, dataloader_eval, device)
+            accuracies['val'].append(test_acc_after)
+            accuracies['test'].append(test_std_after)
             # test_accs.append(test_acc)
             logger.info("*" * 50)
             logger.info("Evaluating embedding...")
             # logger.info('Epoch: {}, Test Acc: {:.4f} ± {:.4f}'.format(epoch, test_acc, test_std))
-            logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epochs, test_acc*100, test_std*100))
+            logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epochs, test_acc_after*100, test_std_after*100))
 
-            if test_acc > best_test_acc:
-                best_test_acc = test_acc
-                best_test_std = test_std
+            if test_acc_after > best_test_acc_after:
+                best_test_acc_after = test_acc_after
+                best_test_std_after = test_std_after
 
-    logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc_after*100, best_test_std_after*100))
 
     joint_log_dir = os.path.join('unsupervised_exp', args.exp, save_name)
     joint_log_path = os.path.join(joint_log_dir, joint_log_name)
