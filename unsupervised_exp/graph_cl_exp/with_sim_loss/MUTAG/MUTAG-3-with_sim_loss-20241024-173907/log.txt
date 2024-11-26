@@ -1,1 +1,0 @@
-2024-10-24 17:39:07,321 Namespace(dataset='MUTAG', local=False, glob=False, prior=False, lr=0.001, gpu=0, num_gc_layers=5, hidden_dim=128, aug='dnodes', seed=3, exp='graph_cl_exp', save='unsupervised_exp/graph_cl_exp/with_sim_loss/MUTAG/MUTAG-3-with_sim_loss-20241024-173907', batch_size=128, epochs=30)
