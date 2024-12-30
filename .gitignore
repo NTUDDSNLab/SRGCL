@@ -1,37 +1,7 @@
-__pycache__
-*.pyc
-# augs.py
-data
-environment.yml
-exp
-joint_strategy_vis.ipynb
-old
-paper_mnist_vis.ipynb
-# pretrain_models
-# unsupervised
-unsupervised/unsupervised_exp
-# utils.py
-.vscode
-.DS_Store
-run0.sh
-run1.sh
-run2.sh
-.ipynb_checkpoints
-transfer.md
-# semi_supervised
-dataset/
-*.zip
-tmp/
-pretrain_models/joint_strategy_vis
-pretrain_models/mnist_superpixel_vis
-transfer/transfer_exp
-# Ignore directories
-pretrain_models/
-semi_supervised/
-transfer/
 data/
-unsupervised/cortex_DIM/
-# Ignore specific files
-unsupervised/un_exp_rep.sh
-# Ignore a specific directory
-unsupervised/un_exp/
+graphcl/cortex_DIM/nn_modules/__pycache__/
+graphcl/cortex_DIM/functions/__pycache__/
+autogcl/unsupervised/__pycache__/
+autogcl/unsupervised/cortex_DIM/nn_modules/__pycache__/
+autogcl/unsupervised/cortex_DIM/functions/__pycache__/
+autogcl/unsupervised/unsupervised_exp/
