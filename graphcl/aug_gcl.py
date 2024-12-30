@@ -65,7 +65,7 @@ class TUDataset_aug(InMemoryDataset):
 
     def __init__(self, root, name, transform=None, pre_transform=None,
                  pre_filter=None, use_node_attr=False, use_edge_attr=False,
-                 cleaned=False, aug='none'):
+                 cleaned=True, aug='none'):
         self.name = name
         self.cleaned = cleaned
         super(TUDataset_aug, self).__init__(root, transform, pre_transform,
