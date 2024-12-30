@@ -315,7 +315,7 @@ if __name__ == '__main__':
     topk_views_cl = args.k
     decay_method = args.decay_type
     start_deterministic = args.start_deterministic
-    log_interval = 10
+    log_interval = 1
     batch_size = args.batch_size
     lr = args.lr
     DS = args.DS
