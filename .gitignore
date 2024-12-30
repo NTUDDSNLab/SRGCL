@@ -25,3 +25,14 @@ tmp/
 pretrain_models/joint_strategy_vis
 pretrain_models/mnist_superpixel_vis
 transfer/transfer_exp
+# Ignore directories
+pretrain_models/
+semi_supervised/
+transfer/
+unsupervised/cortex_DIM/
+# Ignore specific files
+unsupervised/un_exp_rep.sh
+# Ignore a specific directory
+unsupervised/un_exp/
+# Do not ignore this specific file (negate the rule)
+README.md
