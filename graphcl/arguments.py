@@ -28,6 +28,7 @@ def arg_parse():
     parser.add_argument('--batch_size', type=int, default=128, help='128, 256, 512, 1024')
     parser.add_argument('--start_deterministic', type=int, default=20, help='The epoch starts to use exactly topk in temperature sampling')
     parser.add_argument('--decay_type', type=str, default='exponential', help='exponential, cosine')
+    parser.add_argument('--log_interval', type=int, default=1)
     return parser.parse_args()
 
 
