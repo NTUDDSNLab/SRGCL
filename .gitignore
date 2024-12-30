@@ -5,3 +5,9 @@ autogcl/unsupervised/__pycache__/
 autogcl/unsupervised/cortex_DIM/nn_modules/__pycache__/
 autogcl/unsupervised/cortex_DIM/functions/__pycache__/
 autogcl/unsupervised/unsupervised_exp/
+graphcl/__pycache__/
+autogcl/__pycache__/
+adgcl/__pycache__/
+graphcl/data/
+autogcl/data/
+adgcl/data/
