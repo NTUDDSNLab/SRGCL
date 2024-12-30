@@ -29,10 +29,9 @@ transfer/transfer_exp
 pretrain_models/
 semi_supervised/
 transfer/
+data/
 unsupervised/cortex_DIM/
 # Ignore specific files
 unsupervised/un_exp_rep.sh
 # Ignore a specific directory
 unsupervised/un_exp/
-# Do not ignore this specific file (negate the rule)
-README.md
