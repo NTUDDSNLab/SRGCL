@@ -200,8 +200,8 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     with torch.no_grad():
         original_embedding = anchor_model(original_batch.x, original_batch.edge_index, original_batch.batch, original_batch.num_graphs)
         aug_embedding = anchor_model(aug_batch.x, aug_batch.edge_index, aug_batch.batch, aug_batch.num_graphs)
-    original_embedding = original_embedding[0]
-    aug_embedding = aug_embedding[0]
+    # original_embedding = original_embedding[0]
+    # aug_embedding = aug_embedding[0]
 
     if(selector == 'cosine'):
         cosine_sim = F.cosine_similarity(original_embedding, aug_embedding)
@@ -244,7 +244,7 @@ if __name__ == '__main__':
     selector = args.d
     augmentation_type = args.aug
     log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', DS)
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()

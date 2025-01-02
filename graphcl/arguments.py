@@ -22,7 +22,7 @@ def arg_parse():
     parser.add_argument('--r', default=0.2, type=float, help='aug_ratio')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
-    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
+    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector (cosine, l2_norm)')
     # Random
     parser.add_argument('--eta', type=float, default=1.0, help='0.1, 1.0, 10, 100, 1000')
     parser.add_argument('--batch_size', type=int, default=128, help='128, 256, 512, 1024')     

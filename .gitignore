@@ -9,5 +9,6 @@ graphcl/__pycache__/
 autogcl/__pycache__/
 adgcl/__pycache__/
 graphcl/data/
+graphcl/logs/
 autogcl/data/
 adgcl/data/

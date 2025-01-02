@@ -61,21 +61,17 @@ def arg_parse():
     parser.add_argument('--prior', dest='prior', action='store_const', const=True, default=False)
     parser.add_argument('--lr', dest='lr', type=float, default=0.001, help='Learning rate.')
     # parser.add_argument('--decay', dest='lr decay', type=float, default=0, help='Learning rate.')
-    parser.add_argument('--gpu', type=int, default=0)
 
     parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
-    parser.add_argument('--aug', type=str, default='dnodes')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
-    parser.add_argument('--r', default=0.2, type=float, help='aug_ratio')
-    parser.add_argument('--v', type=int, default=50, help='number of views each generation')
-    parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
-
-    parser.add_argument('--exp', type=str, default = 'cl_exp', help='')
-    parser.add_argument('--save', type=str, default = 'debug', help='')
+    parser.add_argument('--save', type=str, default = 'with_sim_loss', help='')
     parser.add_argument('--batch_size', type=int, default = 128, help='')
     parser.add_argument('--epochs', type=int, default = 30, help='')
+
+    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
+    parser.add_argument('--v', type=int, default=50, help='number of views each generation')
+    parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
 
     return parser.parse_args()
 
@@ -218,7 +214,8 @@ def loss_cl(x1, x2):
     loss = (loss_a + loss_b) / 2
     return loss
 
-def calculate_distance(data_batch1, data_batch2, anchor_model, selector):    
+def calculate_distance(data_batch1, data_batch2, anchor_model, selector): 
+    anchor_model.eval()   
     anchor_x = anchor_model(data_batch1)
     aug_x = anchor_model(data_batch2)
     if(selector == 'cosine'):
@@ -239,7 +236,6 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
     for data in data_loader:
 
         anchor_model.load_state_dict(model.state_dict())
-        anchor_model.eval()
         optimizer.zero_grad()
         view_optimizer.zero_grad()
 
@@ -257,8 +253,8 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
             distance = calculate_distance(data, view2, anchor_model, selector)
             distances2.append((distance, view2, sample2))
 
-        distances1.sort(key=lambda x: x[0])
-        distances2.sort(key=lambda x: x[0])
+        distances1.sort(key=lambda x: x[0], reverse=True)
+        distances2.sort(key=lambda x: x[0], reverse=True)
 
         closest_augmentations1 = distances1[:topk_views_cl]
         closest_augmentations2 = distances2[:topk_views_cl]
@@ -309,7 +305,7 @@ def cl_exp(args):
     joint_log_name = 'joint_log_{}.txt'.format(args.save)
     save_name = args.save
     args.save = '{}-{}-{}-{}'.format(args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
-    args.save = os.path.join('unsupervised_exp', args.exp, save_name, args.dataset, args.save)
+    args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
     create_exp_dir(args.save, glob.glob('*.py'))
 
     log_format = '%(asctime)s %(message)s'
@@ -321,8 +317,7 @@ def cl_exp(args):
     logger.addHandler(fh)
     logger.info(args)
 
-    device_id = 'cuda:%d' % (args.gpu)
-    device = torch.device(device_id if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     epochs = args.epochs
@@ -332,9 +327,7 @@ def cl_exp(args):
     topk_views_cl = args.k
     lr = args.lr
     selector = args.d
-    dataset_name = args.dataset
-    # path = os.path.join('unsupervised_data')
-    dataset = get_dataset(args.dataset, sparse=True, feat_str='deg+odeg100', root='../data')
+    dataset = get_dataset(args.dataset, sparse=True, feat_str='deg+odeg100', root='../../data')
     dataset = dataset.shuffle()
 
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -440,6 +433,5 @@ class simclr_graph_cl(nn.Module):
 
 if __name__ == '__main__':
     args = arg_parse()
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cl_exp(args)
 

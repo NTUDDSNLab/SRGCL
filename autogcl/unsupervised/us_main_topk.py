@@ -54,28 +54,7 @@ from view_generator import ViewGenerator, GIN_NodeWeightEncoder
 from IPython import embed
 
 def arg_parse():
-    parser = argparse.ArgumentParser(description='GcnInformax Arguments.')
-    parser.add_argument('--dataset', dest='dataset', help='Dataset')
-    parser.add_argument('--local', dest='local', action='store_const', const=True, default=False)
-    parser.add_argument('--glob', dest='glob', action='store_const', const=True, default=False)
-    parser.add_argument('--prior', dest='prior', action='store_const', const=True, default=False)
-    parser.add_argument('--lr', dest='lr', type=float, default=0.001, help='Learning rate.')
-    # parser.add_argument('--decay', dest='lr decay', type=float, default=0, help='Learning rate.')
-    parser.add_argument('--gpu', type=int, default=0)
 
-    parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
-    parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
-    parser.add_argument('--aug', type=str, default='dnodes')
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
-    parser.add_argument('--r', default=0.2, type=float, help='aug_ratio')
-    parser.add_argument('--v', type=int, default=50, help='number of views each generation')
-    parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
-
-    parser.add_argument('--exp', type=str, default = 'cl_exp', help='')
-    parser.add_argument('--save', type=str, default = 'debug', help='')
-    parser.add_argument('--batch_size', type=int, default = 128, help='')
-    parser.add_argument('--epochs', type=int, default = 30, help='')
 
     return parser.parse_args()
 
@@ -306,7 +285,7 @@ def cl_exp(args):
     joint_log_name = 'joint_log_{}.txt'.format(args.save)
     save_name = args.save
     args.save = '{}-{}-{}-{}'.format(args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
-    args.save = os.path.join('unsupervised_exp', args.exp, save_name, args.dataset, args.save)
+    args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
     create_exp_dir(args.save, glob.glob('*.py'))
 
     log_format = '%(asctime)s %(message)s'
@@ -440,3 +419,21 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cl_exp(args)
 
+    parser = argparse.ArgumentParser(description='GcnInformax Arguments.')
+    parser.add_argument('--dataset', dest='dataset', help='Dataset')
+    parser.add_argument('--local', dest='local', action='store_const', const=True, default=False)
+    parser.add_argument('--glob', dest='glob', action='store_const', const=True, default=False)
+    parser.add_argument('--prior', dest='prior', action='store_const', const=True, default=False)
+    parser.add_argument('--lr', dest='lr', type=float, default=0.001, help='Learning rate.')
+    # parser.add_argument('--decay', dest='lr decay', type=float, default=0, help='Learning rate.')
+
+    parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
+    parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--save', type=str, default = 'with_sim_loss', help='')
+    parser.add_argument('--batch_size', type=int, default = 128, help='')
+    parser.add_argument('--epochs', type=int, default = 30, help='')
+
+    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
+    parser.add_argument('--v', type=int, default=50, help='number of views each generation')
+    parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
