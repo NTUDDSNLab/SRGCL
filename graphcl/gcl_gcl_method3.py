@@ -257,9 +257,11 @@ if __name__ == '__main__':
     DS = args.DS
     selector = args.d
     augmentation_type = args.aug
-    log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
     path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
-    # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    log_file = open(f'./logs/log_gcl_gcl_{DS}_{augmentation_type}_{start_time}.txt', 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
     dataset_eval = TUDataset(path, name=DS, aug='none').shuffle()
 
