@@ -4,7 +4,7 @@
 
 - `adgcl/`
 - `autogcl/`
-- `data/` - Directory for storing datasets used in experiments
+- `data/` - Directory for storing datasets
 - `graphcl/`
 - `.gitignore`
 - `README.md`

@@ -17,7 +17,7 @@ def arg_parse():
             help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=32, help='')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--epochs', type=int, default=3)
+    parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--aug', type=str, default='dnodes', help='dnodes, pedges, mask_nodes, hybrid')
     parser.add_argument('--r', default=0.2, type=float, help='aug_ratio')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
