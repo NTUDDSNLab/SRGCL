@@ -152,38 +152,63 @@ class simclr(nn.Module):
 
         return loss
 
-def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated_views_num=50, augmentation_type='dnodes'):
+def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
     aug_ratio = args.r
     aug_data_list_1 = []
     aug_data_list_2 = []
+    
+    # 記錄各種 augmentation 的統計
+    augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
+    
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
         aug_data_list = []
-        for _ in range(generated_views_num):
+        
+        if augmentation_type == 'hybrid':
+            # 每種 augmentation 生成的數量
+            hybrid_count = round(generated_views_num / 3)
+            aug_types = ['dnodes', 'pedges', 'mask_nodes']
+            hybrid_augmentation_list = aug_types * hybrid_count
+        else:
+            hybrid_augmentation_list = [augmentation_type] * generated_views_num
+        
+        for aug_type in hybrid_augmentation_list:
             graph = original_graph.clone()
-            if augmentation_type == 'dnodes':
+            if aug_type == 'dnodes':
                 graph.edge_index, _, graph_node_mask = dropout_node(graph.edge_index, aug_ratio)
                 graph_node_mask = graph_node_mask.cpu().detach().numpy().astype(int)
                 feature_size = graph.x.shape[1]
                 graph_node_mask_2d = np.tile(graph_node_mask, (feature_size, 1))
                 graph_node_mask_2d = torch.from_numpy(np.transpose(graph_node_mask_2d)).to(device)
                 graph.x = graph.x * graph_node_mask_2d
-                aug_data_list.append(graph)
-            elif augmentation_type == 'pedges':
+                aug_data_list.append((graph, 'dnodes'))
+            elif aug_type == 'pedges':
                 graph.edge_index, _ = dropout_edge(graph.edge_index, aug_ratio)
                 graph.edge_index = graph.edge_index.to(torch.long)
-                aug_data_list.append(graph)
-            elif augmentation_type == 'mask_nodes':
+                aug_data_list.append((graph, 'pedges'))
+            elif aug_type == 'mask_nodes':
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
-                aug_data_list.append(graph)
+                aug_data_list.append((graph, 'mask_nodes'))
+        
         distances = []
-        for aug_graph in aug_data_list:
+        for aug_graph, aug_type in aug_data_list:
             distance = calculate_distance(original_graph, aug_graph, anchor_model, selector)
-            distances.append((distance, aug_graph))
+            distances.append((distance, aug_graph, aug_type))
         distances.sort(key=lambda x: x[0])
-        # print(distances)
+        
         aug_data_list_1.append(distances[0][1])
+        augmentation_counts[distances[0][2]] += 1
         aug_data_list_2.append(distances[1][1])
+        augmentation_counts[distances[1][2]] += 1
+    
+    # 計算比例
+    # total_augmentations = sum(augmentation_counts.values())
+    # ratio = {k: v / total_augmentations for k, v in augmentation_counts.items()}
+    # print("Augmentation Ratios", ratio)
+    # log_file.write('Augmentation Ratios: {}\n'.format(ratio))
+    if total_augmentation_counts is not None:
+        for k in augmentation_counts:
+            total_augmentation_counts[k] += augmentation_counts[k]
 
 
     augmented_data_batch_1 = Batch.from_data_list(aug_data_list_1)
@@ -232,10 +257,12 @@ def calculate_temperature(current_epoch, max_epoch, start_deterministic, decay_m
 
 def generate_views_with_temperature(data_batch, anchor_model, current_epoch=0, max_epoch=30, 
                                   start_deterministic=20, decay_method='exponential',
-                                  generated_views_num=50, augmentation_type='dnodes'):
+                                  generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
     aug_ratio = args.r
     aug_data_list_1 = []
     aug_data_list_2 = []
+
+    augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
     
     # 計算當前溫度
     temperature = calculate_temperature(current_epoch, max_epoch, start_deterministic, decay_method)
@@ -244,44 +271,67 @@ def generate_views_with_temperature(data_batch, anchor_model, current_epoch=0, m
         original_graph = graph.clone()
         aug_data_list = []
         
-        # 生成增強視圖
-        for _ in range(generated_views_num):
+        if augmentation_type == 'hybrid':
+            # 每種 augmentation 生成的數量
+            hybrid_count = round(generated_views_num / 3)
+            aug_types = ['dnodes', 'pedges', 'mask_nodes']
+            hybrid_augmentation_list = aug_types * hybrid_count
+        else:
+            hybrid_augmentation_list = [augmentation_type] * generated_views_num
+        
+        for aug_type in hybrid_augmentation_list:
             graph = original_graph.clone()
-            if augmentation_type == 'dnodes':
+            if aug_type == 'dnodes':
                 graph.edge_index, _, graph_node_mask = dropout_node(graph.edge_index, aug_ratio)
                 graph_node_mask = graph_node_mask.cpu().detach().numpy().astype(int)
                 feature_size = graph.x.shape[1]
                 graph_node_mask_2d = np.tile(graph_node_mask, (feature_size, 1))
                 graph_node_mask_2d = torch.from_numpy(np.transpose(graph_node_mask_2d)).to(device)
                 graph.x = graph.x * graph_node_mask_2d
-                aug_data_list.append(graph)
-            elif augmentation_type == 'pedges':
+                aug_data_list.append((graph, 'dnodes'))
+            elif aug_type == 'pedges':
                 graph.edge_index, _ = dropout_edge(graph.edge_index, aug_ratio)
                 graph.edge_index = graph.edge_index.to(torch.long)
-                aug_data_list.append(graph)
-            elif augmentation_type == 'mask_nodes':
+                aug_data_list.append((graph, 'pedges'))
+            elif aug_type == 'mask_nodes':
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
-                aug_data_list.append(graph)
+                aug_data_list.append((graph, 'mask_nodes'))
                 
         # 計算距離
         distances = []
-        for aug_graph in aug_data_list:
+        for aug_graph, aug_type in aug_data_list:
             distance = calculate_distance(original_graph, aug_graph, anchor_model, selector)
-            distances.append((distance, aug_graph))
+            distances.append((distance, aug_graph, aug_type))
             
         # 根據溫度進行選擇
+        selected_graphs = []
+        selected_aug_types = []
         if temperature > 0:
             # 使用溫度控制的隨機選擇
             weights = torch.softmax(-torch.tensor([d[0] for d in distances]) / temperature, dim=0)
             indices = torch.multinomial(weights, 2, replacement=False)
-            selected_graphs = [distances[i.item()][1] for i in indices]
+            for idx in indices:
+                selected_graphs.append(distances[idx.item()][1])
+                selected_aug_types.append(distances[idx.item()][2])
         else:
             # 完全確定性選擇
             distances.sort(key=lambda x: x[0])
             selected_graphs = [distances[0][1], distances[1][1]]
+            selected_aug_types = [distances[0][2], distances[1][2]]
             
         aug_data_list_1.append(selected_graphs[0])
         aug_data_list_2.append(selected_graphs[1])
+
+        if len(selected_aug_types) >= 2:
+            augmentation_counts[selected_aug_types[0]] += 1
+            augmentation_counts[selected_aug_types[1]] += 1
+        elif len(selected_aug_types) == 1:
+            augmentation_counts[selected_aug_types[0]] += 1
+    
+    # Update the global augmentation counts
+    if total_augmentation_counts is not None:
+        for k in augmentation_counts:
+            total_augmentation_counts[k] += augmentation_counts[k]
 
     augmented_data_batch_1 = Batch.from_data_list(aug_data_list_1)
     augmented_data_batch_2 = Batch.from_data_list(aug_data_list_2)
@@ -323,7 +373,7 @@ if __name__ == '__main__':
     augmentation_type = args.aug
     
     log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
@@ -364,7 +414,9 @@ if __name__ == '__main__':
 
     best_test_acc = 0
     best_test_std = 0
-
+    
+    total_augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
+    
     for epoch in range(1, epochs+1):
         loss_all = 0
         model.train()
@@ -384,7 +436,8 @@ if __name__ == '__main__':
                                                     start_deterministic=start_deterministic,
                                             decay_method=decay_method,  # 或 'exponential'
                                             generated_views_num=generated_views_num,
-                                            augmentation_type=augmentation_type
+                                            augmentation_type=augmentation_type,
+                                            total_augmentation_counts=total_augmentation_counts
             )
 
             optimizer.zero_grad()
@@ -422,9 +475,13 @@ if __name__ == '__main__':
     start_time_obj = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
     end_time_obj = datetime.datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
     elapsed_time = end_time_obj - start_time_obj
-
-    print('Elapsed Time: {}\n'.format(elapsed_time))
+    print('Elapsed Time: {}'.format(elapsed_time))
     log_file.write('Elapsed Time: {}\n'.format(elapsed_time))
+
+    total_augmentations = sum(total_augmentation_counts.values())
+    final_ratio = {k: v / total_augmentations for k, v in total_augmentation_counts.items()}
+    print("Final Augmentation Ratios:", final_ratio)
+    log_file.write(f'Final Augmentation Ratios: {final_ratio}\n')
     log_file.close()
 
     with open('logs/log_' + args.DS + '_' + args.aug, 'a+') as f:

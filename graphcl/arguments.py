@@ -17,18 +17,17 @@ def arg_parse():
             help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=32, help='')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--epochs', type=int, default=30)
-    parser.add_argument('--aug', type=str, default='dnodes')
+    parser.add_argument('--epochs', type=int, default=3)
+    parser.add_argument('--aug', type=str, default='dnodes', help='dnodes, pedges, mask_nodes, hybrid')
     parser.add_argument('--r', default=0.2, type=float, help='aug_ratio')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector (cosine, l2_norm)')
-    # Random
     parser.add_argument('--eta', type=float, default=1.0, help='0.1, 1.0, 10, 100, 1000')
     parser.add_argument('--batch_size', type=int, default=128, help='128, 256, 512, 1024')
     parser.add_argument('--start_deterministic', type=int, default=20, help='The epoch starts to use exactly topk in temperature sampling')
     parser.add_argument('--decay_type', type=str, default='exponential', help='exponential, cosine')
-    parser.add_argument('--log_interval', type=int, default=1)
+    parser.add_argument('--log_interval', type=int, default=10)
     return parser.parse_args()
 
 
