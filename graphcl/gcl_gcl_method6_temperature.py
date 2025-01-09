@@ -40,6 +40,7 @@ from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, d
 import math
 import random
 import collections
+from check_dim_collapse import check_dimensional_collapse
 # from datetime import datetime
 
 
@@ -322,8 +323,8 @@ if __name__ == '__main__':
     selector = args.d
     augmentation_type = args.aug
     
-    log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    # path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    path = osp.join('/disk_195a/qiannnhui/data', DS)
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
@@ -348,16 +349,9 @@ if __name__ == '__main__':
     print('hidden_dim: {}'.format(args.hidden_dim))
     print('num_gc_layers: {}'.format(args.num_gc_layers))
     print('================')
-    log_file.write('================\n')
-    log_file.write('lr: {}\n'.format(lr))
-    log_file.write('num_features: {}\n'.format(dataset_num_features))
-    log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
-    log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
-    log_file.write('================\n')
 
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('Start Time: {}'.format(start_time))
-    log_file.write('Start Time: {}\n'.format(start_time))
 
     best_test_acc_before = 0
     best_test_std_before = 0
@@ -398,34 +392,29 @@ if __name__ == '__main__':
             optimizer.step()
 
         print('Epoch {}, Loss {}'.format(epoch, loss_all / len(dataloader.dataset)))
-        log_file.write('Epoch {}, Loss {}\n'.format(epoch, loss_all / len(dataloader.dataset)))
        
         if epoch % log_interval == 0:
             model.eval()
             emb, y = model.encoder.get_embeddings(dataloader_eval)
             test_acc, test_std = evaluate_embedding(emb, y)
+            check_dimensional_collapse(emb)
             accuracies['val'].append(test_acc)
             accuracies['test'].append(test_std)
             print('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
-            log_file.write('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epochs, test_acc*100, test_std*100))
 
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
-    log_file.write('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
     print('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
 
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('End Time: {}'.format(end_time))
-    log_file.write('End Time: {}\n'.format(end_time))
 
     start_time_obj = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
     end_time_obj = datetime.datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
     elapsed_time = end_time_obj - start_time_obj
 
     print('Elapsed Time: {}\n'.format(elapsed_time))
-    log_file.write('Elapsed Time: {}\n'.format(elapsed_time))
-    log_file.close()
 
     with open('logs/log_' + args.DS + '_' + args.aug, 'a+') as f:
         f.write('{},{:.2f},{:.2f}\n'.format(args.DS, best_test_acc*100, best_test_std*100))
