@@ -156,8 +156,7 @@ def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated
     aug_ratio = args.r
     aug_data_list_1 = []
     aug_data_list_2 = []
-    
-    # 記錄各種 augmentation 的統計
+
     augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
     
     for graph in data_batch.to_data_list():        
@@ -165,7 +164,6 @@ def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated
         aug_data_list = []
         
         if augmentation_type == 'hybrid':
-            # 每種 augmentation 生成的數量
             hybrid_count = round(generated_views_num / 3)
             aug_types = ['dnodes', 'pedges', 'mask_nodes']
             hybrid_augmentation_list = aug_types * hybrid_count
@@ -201,7 +199,7 @@ def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated
         aug_data_list_2.append(distances[1][1])
         augmentation_counts[distances[1][2]] += 1
     
-    # 計算比例
+    # Each ratio
     # total_augmentations = sum(augmentation_counts.values())
     # ratio = {k: v / total_augmentations for k, v in augmentation_counts.items()}
     # print("Augmentation Ratios", ratio)
