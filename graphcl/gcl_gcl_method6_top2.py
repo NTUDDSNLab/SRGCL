@@ -259,7 +259,7 @@ if __name__ == '__main__':
     generated_views_num = args.v
     topk_views_cl = args.k
 
-    log_interval = 10
+    log_interval = args.log_interval
     batch_size = args.batch_size
     lr = args.lr
     DS = args.DS

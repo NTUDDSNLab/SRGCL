@@ -31,6 +31,8 @@ def arg_parse():
     parser.add_argument('--exp_factor', type=float, default=0.95, help='exponential method factor')
     parser.add_argument('--cosine_factor', type=float, default=0.5, help='cosine method factor')
     parser.add_argument('--log_interval', type=int, default=10)
+    parser.add_argument('--ckpt', type=bool, default=True)
+    parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm', help='')
     return parser.parse_args()
 
 

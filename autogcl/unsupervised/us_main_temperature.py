@@ -77,6 +77,7 @@ def arg_parse():
     parser.add_argument('--init_temp', type=float, default=1.0, help='Set initial temperature')
     parser.add_argument('--exp_factor', type=float, default=0.95, help='exponential method factor')
     parser.add_argument('--cosine_factor', type=float, default=0.5, help='cosine method factor')
+    parser.add_argument('--ckpt', type=bool, default=True)
 
     return parser.parse_args()
 
@@ -412,7 +413,8 @@ def cl_exp(args):
     save_name = args.save
     args.save = '{}-{}-{}-{}-{}'.format(args.decay_type ,args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
     args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
-    create_exp_dir(args.save, glob.glob('*.py'))
+    # create_exp_dir(args.save, glob.glob('*.py'))
+    create_exp_dir(args.save, None)
 
     log_format = '%(asctime)s %(message)s'
     logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -438,11 +440,12 @@ def cl_exp(args):
     batch_size = args.batch_size
     generated_views_num = args.v
     topk_views_cl = args.k
+    isSaveckpt = args.ckpt
     lr = args.lr
     selector = args.d
     dataset_name = args.dataset
     # path = os.path.join('unsupervised_data')
-    dataset = get_dataset(args.dataset, sparse=True, feat_str='deg+odeg100', root='../data')
+    dataset = get_dataset(args.dataset, sparse=True, feat_str='deg+odeg100', root='../../data')
     dataset = dataset.shuffle()
 
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -495,10 +498,14 @@ def cl_exp(args):
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
+                if isSaveckpt:
+                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
             logger.info("*" * 50)
             logger.info("Evaluating embedding...")
             logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
     logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    if isSaveckpt:
+        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
 
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     start_time_obj = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")

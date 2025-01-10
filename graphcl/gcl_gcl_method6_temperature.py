@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import numpy as np
 import json
 import random
+import shutil
 import datetime
 from torch_sparse import SparseTensor
 from aug_gcl import TUDataset_aug as TUDataset
@@ -299,6 +300,18 @@ def setup_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
+def create_exp_dir(path, scripts_to_save=None):
+    if not os.path.exists(path):
+        os.makedirs(path)        
+        os.mkdir(os.path.join(path, 'model'))
+
+    print('Experiment dir : {}'.format(path))
+    if scripts_to_save is not None:
+        os.mkdir(os.path.join(path, 'scripts'))
+        for script in scripts_to_save:
+            dst_file = os.path.join(path, 'scripts', os.path.basename(script))
+            shutil.copyfile(script, dst_file)
+
 class Add_Indices(BaseTransform):
     def __call__(self, data):
         data.indices = torch.tensor([0])
@@ -321,13 +334,22 @@ if __name__ == '__main__':
     lr = args.lr
     DS = args.DS
     selector = args.d
+    isSaveckpt = args.ckpt
     augmentation_type = args.aug
     init_temp = args.init_temp
     cosine_factor = args.cosine_factor
     exp_factor = args.exp_factor
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    save_name = args.save
+    args.save = '{}-{}-{}-{}-{}'.format(args.dataset, args.save, start_time)
+    args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
+    create_exp_dir(args.save, None)
+    # create_exp_dir(args.save, glob.glob('*.py'))
+    log_file = open(f'./logs/{args.save}.txt', 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
     
-    log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', DS)
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
@@ -358,10 +380,6 @@ if __name__ == '__main__':
     log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
     log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
     log_file.write('================\n')
-
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
-    log_file.write('Start Time: {}\n'.format(start_time))
 
     best_test_acc_before = 0
     best_test_std_before = 0
@@ -419,8 +437,12 @@ if __name__ == '__main__':
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
+                if isSaveckpt:
+                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
     log_file.write('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
     print('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    if isSaveckpt:
+        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
 
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('End Time: {}'.format(end_time))
