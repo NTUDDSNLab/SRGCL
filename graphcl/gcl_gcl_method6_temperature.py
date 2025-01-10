@@ -343,10 +343,10 @@ if __name__ == '__main__':
     print('Start Time: {}'.format(start_time))
     save_name = args.save
     args.save = '{}-{}-{}-{}-{}'.format(args.dataset, args.save, start_time)
-    args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
+    args.save = os.path.join('logs', save_name, args.dataset, args.save)
     create_exp_dir(args.save, None)
     # create_exp_dir(args.save, glob.glob('*.py'))
-    log_file = open(f'./logs/{args.save}.txt', 'w')
+    log_file = open(f'./logs/{args.save}/log.txt', 'w')
     log_file.write('Start Time: {}\n'.format(start_time))
     
     path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', DS)
