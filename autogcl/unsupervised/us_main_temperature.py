@@ -61,17 +61,23 @@ def arg_parse():
     parser.add_argument('--prior', dest='prior', action='store_const', const=True, default=False)
     parser.add_argument('--lr', dest='lr', type=float, default=0.001, help='Learning rate.')
     # parser.add_argument('--decay', dest='lr decay', type=float, default=0, help='Learning rate.')
-
+    parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--save', type=str, default = 'with_sim_loss', help='')
+    parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm', help='')
     parser.add_argument('--batch_size', type=int, default = 128, help='')
     parser.add_argument('--epochs', type=int, default = 30, help='')
 
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
+    parser.add_argument('--start_deterministic', type=int, default=20, help='The epoch starts to use exactly topk in temperature sampling')
+    parser.add_argument('--decay_type', type=str, default='exponential', help='exponential, cosine')
+    parser.add_argument('--init_temp', type=float, default=1.0, help='Set initial temperature')
+    parser.add_argument('--exp_factor', type=float, default=0.95, help='exponential method factor')
+    parser.add_argument('--cosine_factor', type=float, default=0.5, help='cosine method factor')
+    parser.add_argument('--ckpt', type=bool, default=True)
 
     return parser.parse_args()
 
@@ -214,8 +220,7 @@ def loss_cl(x1, x2):
     loss = (loss_a + loss_b) / 2
     return loss
 
-def calculate_distance(data_batch1, data_batch2, anchor_model, selector): 
-    anchor_model.eval()   
+def calculate_distance(data_batch1, data_batch2, anchor_model, selector):    
     anchor_x = anchor_model(data_batch1)
     aug_x = anchor_model(data_batch2)
     if(selector == 'cosine'):
@@ -236,6 +241,7 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
     for data in data_loader:
 
         anchor_model.load_state_dict(model.state_dict())
+        anchor_model.eval()
         optimizer.zero_grad()
         view_optimizer.zero_grad()
 
@@ -253,8 +259,8 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
             distance = calculate_distance(data, view2, anchor_model, selector)
             distances2.append((distance, view2, sample2))
 
-        distances1.sort(key=lambda x: x[0], reverse=True)
-        distances2.sort(key=lambda x: x[0], reverse=True)
+        distances1.sort(key=lambda x: x[0])
+        distances2.sort(key=lambda x: x[0])
 
         closest_augmentations1 = distances1[:topk_views_cl]
         closest_augmentations2 = distances2[:topk_views_cl]
@@ -264,23 +270,20 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
 
         closest_data_batch_augmentations2 = [aug for _, aug, _ in closest_augmentations2]
         closest_sample_augmentations2 = [sample for _, _, sample in closest_augmentations2]
+        sim_loss = F.mse_loss(closest_sample_augmentations1[0], closest_sample_augmentations2[0])
+        cl_loss = loss_cl(model(closest_data_batch_augmentations1[0]), model(closest_data_batch_augmentations2[0]))
 
-        view1 = closest_data_batch_augmentations1[0]
-        view2 = closest_data_batch_augmentations2[0]
+        for i in range(len(closest_sample_augmentations1)):
+            for j in range(i + 1, len(closest_sample_augmentations2)):
+                if (i ==0  and j == 0):
+                    continue
+                sim_loss += (1 - F.mse_loss(closest_sample_augmentations1[i], closest_sample_augmentations2[j]))
 
-        sample1 = closest_sample_augmentations1[0]
-        sample2 = closest_sample_augmentations2[0]
-
-        sim_loss = F.mse_loss(sample1, sample2)
-        sim_loss = (1 - sim_loss)
-
-        input_list = [data, view1, view2]
-        input1, input2 = random.choices(input_list, k=2)
-
-        out1 = model(input1)
-        out2 = model(input2)
-        
-        cl_loss = loss_cl(out1, out2)
+        for i in range(len(closest_data_batch_augmentations1)):
+            for j in range(i + 1, len(closest_data_batch_augmentations2)):
+                if (i == 0 and j == 0):
+                    continue
+                cl_loss += loss_cl(model(closest_data_batch_augmentations1[i]), model(closest_data_batch_augmentations2[j]))
 
         loss = sim_loss + cl_loss
 
@@ -293,6 +296,110 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
     loss_all /= total_graphs
     return loss_all
 
+def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
+    # 計算進度比例
+    progress = current_epoch / start_deterministic
+    
+    if decay_method == 'exponential':
+        # 在 start_deterministic 時達到接近 0 的溫度
+        temperature = (exp_factor*init_temp) ** (current_epoch * (max_epoch/start_deterministic))
+    elif decay_method == 'cosine':
+        # 確保在 start_deterministic 時溫度接近 0
+        if current_epoch >= start_deterministic:
+            temperature = 0
+        else:
+            # 使用餘弦函數，在 start_deterministic 時達到最低點
+            temperature = (cosine_factor*init_temp)*(math.cos(progress * math.pi) + 1)
+    else:
+        raise ValueError("Invalid decay method. Use 'exponential' or 'cosine'")
+    
+    return max(0, min(init_temp, temperature))
+
+def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
+                          data_loader, device, selector, current_epoch, max_epoch, start_deterministic,
+                          init_temp, cosine_factor, exp_factor,
+                          decay_method, generated_views_num=50, topk_views_cl=2):
+    loss_all = 0
+    model.train()
+    total_graphs = 0
+    generated_views_num = int(generated_views_num / 2)
+
+    # Calculate temperature for current epoch
+    temperature = calculate_temperature(init_temp, cosine_factor, exp_factor,
+                                     current_epoch, max_epoch, start_deterministic, decay_method)
+
+    for data in data_loader:
+        anchor_model.load_state_dict(model.state_dict())
+        anchor_model.eval()
+        optimizer.zero_grad()
+        view_optimizer.zero_grad()
+
+        data = data.to(device)
+        distances1 = []
+        distances2 = []
+
+        for _ in range(generated_views_num):
+            sample1, view1 = view_gen1(data, True)
+            sample2, view2 = view_gen2(data, True)
+
+            distance = calculate_distance(data, view1, anchor_model, selector)
+            distances1.append((distance, view1, sample1))
+
+            distance = calculate_distance(data, view2, anchor_model, selector)
+            distances2.append((distance, view2, sample2))
+
+        # Apply temperature-based selection
+        if temperature > 0:
+            # Convert distances to weights using temperature
+            weights1 = torch.softmax(-torch.tensor([d[0] for d in distances1]) / temperature, dim=0)
+            weights2 = torch.softmax(-torch.tensor([d[0] for d in distances2]) / temperature, dim=0)
+            
+            # Sample based on weights
+            indices1 = torch.multinomial(weights1, topk_views_cl, replacement=False)
+            indices2 = torch.multinomial(weights2, topk_views_cl, replacement=False)
+            
+            closest_augmentations1 = [distances1[i.item()] for i in indices1]
+            closest_augmentations2 = [distances2[i.item()] for i in indices2]
+        else:
+            # Deterministic selection
+            distances1.sort(key=lambda x: x[0])
+            distances2.sort(key=lambda x: x[0])
+            closest_augmentations1 = distances1[:topk_views_cl]
+            closest_augmentations2 = distances2[:topk_views_cl]
+
+        closest_data_batch_augmentations1 = [aug for _, aug, _ in closest_augmentations1]
+        closest_sample_augmentations1 = [sample for _, _, sample in closest_augmentations1]
+        closest_data_batch_augmentations2 = [aug for _, aug, _ in closest_augmentations2]
+        closest_sample_augmentations2 = [sample for _, _, sample in closest_augmentations2]
+
+        # Calculate losses
+        sim_loss = F.mse_loss(closest_sample_augmentations1[0], closest_sample_augmentations2[0])
+        cl_loss = loss_cl(model(closest_data_batch_augmentations1[0]), model(closest_data_batch_augmentations2[0]))
+
+        for i in range(len(closest_sample_augmentations1)):
+            for j in range(i + 1, len(closest_sample_augmentations2)):
+                if (i == 0 and j == 0):
+                    continue
+                sim_loss += (1 - F.mse_loss(closest_sample_augmentations1[i], closest_sample_augmentations2[j]))
+
+        for i in range(len(closest_data_batch_augmentations1)):
+            for j in range(i + 1, len(closest_data_batch_augmentations2)):
+                if (i == 0 and j == 0):
+                    continue
+                cl_loss += loss_cl(model(closest_data_batch_augmentations1[i]), model(closest_data_batch_augmentations2[j]))
+
+        loss = sim_loss + cl_loss
+        loss_all += loss.item() * data.num_graphs
+        total_graphs += data.num_graphs
+
+        loss.backward()        
+        optimizer.step()
+        view_optimizer.step()
+
+    loss_all /= total_graphs
+    return loss_all
+
+
 def eval_acc(model, data_loader, device):
     model.eval()
     emb, y = model.encoder.get_embeddings(data_loader, device)
@@ -304,9 +411,10 @@ def cl_exp(args):
 
     joint_log_name = 'joint_log_{}.txt'.format(args.save)
     save_name = args.save
-    args.save = '{}-{}-{}-{}'.format(args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
+    args.save = '{}-{}-{}-{}-{}'.format(args.decay_type ,args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
     args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
-    create_exp_dir(args.save, glob.glob('*.py'))
+    # create_exp_dir(args.save, glob.glob('*.py'))
+    create_exp_dir(args.save, None)
 
     log_format = '%(asctime)s %(message)s'
     logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -317,16 +425,26 @@ def cl_exp(args):
     logger.addHandler(fh)
     logger.info(args)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    device_id = 'cuda:%d' % (args.gpu)
+    device = torch.device(device_id if torch.cuda.is_available() else 'cpu')
+    
+    decay_method = args.decay_type
+    start_deterministic = args.start_deterministic
+    init_temp = args.init_temp
+    cosine_factor = args.cosine_factor
+    exp_factor = args.exp_factor
+    
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     epochs = args.epochs
-    log_interval = 10
+    log_interval = 1
     batch_size = args.batch_size
     generated_views_num = args.v
     topk_views_cl = args.k
+    isSaveckpt = args.ckpt
     lr = args.lr
     selector = args.d
+    dataset_name = args.dataset
+    # path = os.path.join('unsupervised_data')
     dataset = get_dataset(args.dataset, sparse=True, feat_str='deg+odeg100', root='../../data')
     dataset = dataset.shuffle()
 
@@ -357,10 +475,22 @@ def cl_exp(args):
     best_test_acc = 0
     best_test_std = 0
     test_accs = []
-
+    logger.info('================')
+    logger.info('start deterministic: {}'.format(args.start_deterministic))
+    logger.info('decay method: {}'.format(args.decay_type))
+    logger.info('init temp: {}'.format(args.init_temp))
+    logger.info('cosine factor: {}'.format(args.cosine_factor))
+    logger.info('exp factor: {}'.format(args.exp_factor))
+    logger.info('================')
     for epoch in range(1, epochs+1):
         # train_loss = train_cl(view_gen1, view_gen2, view_optimizer, model, optimizer, data_loader, device)
-        train_loss = train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, data_loader, device, selector, generated_views_num, topk_views_cl)
+        # train_loss = train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, data_loader, device, selector, generated_views_num, topk_views_cl)
+        train_loss = train_cl_with_sim_loss_temperature(
+            view_gen1, view_gen2, view_optimizer, model, anchor_model, 
+            optimizer, data_loader, device, selector, epoch, 
+            epochs+1, start_deterministic,
+            init_temp, cosine_factor, exp_factor,
+            decay_method, generated_views_num, topk_views_cl)
         logger.info('Epoch: {}, Loss: {:.4f}'.format(epoch, train_loss))
         if epoch % log_interval == 0:
             test_acc, test_std = eval_acc(model, data_eval_loader, device)
@@ -368,10 +498,14 @@ def cl_exp(args):
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
+                if isSaveckpt:
+                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
             logger.info("*" * 50)
             logger.info("Evaluating embedding...")
             logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
     logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    if isSaveckpt:
+        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
 
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     start_time_obj = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
@@ -433,5 +567,6 @@ class simclr_graph_cl(nn.Module):
 
 if __name__ == '__main__':
     args = arg_parse()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cl_exp(args)
 

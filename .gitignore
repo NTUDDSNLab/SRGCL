@@ -1,6 +1,7 @@
 data/
 autogcl/unsupervised/unsupervised_exp/
 graphcl/data/
+graphcl/logs/
 autogcl/data/
 adgcl/data/
 **/__pycache__/

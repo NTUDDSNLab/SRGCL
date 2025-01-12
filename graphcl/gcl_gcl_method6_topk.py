@@ -200,8 +200,8 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     with torch.no_grad():
         original_embedding = anchor_model(original_batch.x, original_batch.edge_index, original_batch.batch, original_batch.num_graphs)
         aug_embedding = anchor_model(aug_batch.x, aug_batch.edge_index, aug_batch.batch, aug_batch.num_graphs)
-    original_embedding = original_embedding[0]
-    aug_embedding = aug_embedding[0]
+    # original_embedding = original_embedding[0]
+    # aug_embedding = aug_embedding[0]
 
     if(selector == 'cosine'):
         cosine_sim = F.cosine_similarity(original_embedding, aug_embedding)
@@ -243,10 +243,11 @@ if __name__ == '__main__':
     DS = args.DS
     selector = args.d
     augmentation_type = args.aug
-    log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
-    # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
-    # add transform to add indices
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    log_file = open(f'./logs/log_gcl_gcl_{DS}_{augmentation_type}_{start_time}.txt', 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
     dataset_eval = TUDataset(path, name=DS, aug='none').shuffle()
 
@@ -263,22 +264,18 @@ if __name__ == '__main__':
     # print(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    print('================')
-    print('lr: {}'.format(lr))
-    print('num_features: {}'.format(dataset_num_features))
-    print('hidden_dim: {}'.format(args.hidden_dim))
-    print('num_gc_layers: {}'.format(args.num_gc_layers))
-    print('================')
-    log_file.write('================\n')
-    log_file.write('lr: {}\n'.format(lr))
-    log_file.write('num_features: {}\n'.format(dataset_num_features))
-    log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
-    log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
-    log_file.write('================\n')
-
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
-    log_file.write('Start Time: {}\n'.format(start_time))
+    # print('================')
+    # print('lr: {}'.format(lr))
+    # print('num_features: {}'.format(dataset_num_features))
+    # print('hidden_dim: {}'.format(args.hidden_dim))
+    # print('num_gc_layers: {}'.format(args.num_gc_layers))
+    # print('================')
+    # log_file.write('================\n')
+    # log_file.write('lr: {}\n'.format(lr))
+    # log_file.write('num_features: {}\n'.format(dataset_num_features))
+    # log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
+    # log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
+    # log_file.write('================\n')
 
     best_test_acc_before = 0
     best_test_std_before = 0

@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import numpy as np
 import json
 import random
+import shutil
 import datetime
 from torch_sparse import SparseTensor
 from aug_gcl import TUDataset_aug as TUDataset
@@ -200,8 +201,8 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     with torch.no_grad():
         original_embedding = anchor_model(original_batch.x, original_batch.edge_index, original_batch.batch, original_batch.num_graphs)
         aug_embedding = anchor_model(aug_batch.x, aug_batch.edge_index, aug_batch.batch, aug_batch.num_graphs)
-    original_embedding = original_embedding[0]
-    aug_embedding = aug_embedding[0]
+    # original_embedding = original_embedding[0]
+    # aug_embedding = aug_embedding[0]
 
     if(selector == 'cosine'):
         cosine_sim = F.cosine_similarity(original_embedding, aug_embedding)
@@ -213,33 +214,34 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     # return distances.mean().item()
     return distance
 
-def calculate_temperature(current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
+def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
     # 計算進度比例
     progress = current_epoch / start_deterministic
     
     if decay_method == 'exponential':
         # 在 start_deterministic 時達到接近 0 的溫度
-        temperature = 0.95 ** (current_epoch * (max_epoch/start_deterministic))
+        temperature = (exp_factor*init_temp) ** (current_epoch * (max_epoch/start_deterministic))
     elif decay_method == 'cosine':
         # 確保在 start_deterministic 時溫度接近 0
         if current_epoch >= start_deterministic:
             temperature = 0
         else:
             # 使用餘弦函數，在 start_deterministic 時達到最低點
-            temperature = 0.5 * (math.cos(progress * math.pi) + 1)
+            temperature = (cosine_factor*init_temp)*(math.cos(progress * math.pi) + 1)
     else:
         raise ValueError("Invalid decay method. Use 'exponential' or 'cosine'")
     
-    return max(0, min(1, temperature))
+    return max(0, min(init_temp, temperature))
 
-def generate_views_with_temperature(data_batch, anchor_model, current_epoch=0, max_epoch=30, 
+def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
+                                data_batch, anchor_model, current_epoch=0, max_epoch=30, 
                                   start_deterministic=20, decay_method='exponential',
                                   generated_views_num=50, augmentation_type='dnodes'):
     aug_ratio = args.r
     aug_data_list_1 = []
     aug_data_list_2 = []
     
-    temperature = calculate_temperature(current_epoch, max_epoch, start_deterministic, decay_method)
+    temperature = calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method)
     
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
@@ -294,6 +296,18 @@ def setup_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
+def create_exp_dir(path, scripts_to_save=None):
+    if not os.path.exists(path):
+        os.makedirs(path)        
+        os.mkdir(os.path.join(path, 'model'))
+
+    print('Experiment dir : {}'.format(path))
+    if scripts_to_save is not None:
+        os.mkdir(os.path.join(path, 'scripts'))
+        for script in scripts_to_save:
+            dst_file = os.path.join(path, 'scripts', os.path.basename(script))
+            shutil.copyfile(script, dst_file)
+
 class Add_Indices(BaseTransform):
     def __call__(self, data):
         data.indices = torch.tensor([0])
@@ -311,12 +325,26 @@ if __name__ == '__main__':
     topk_views_cl = args.k
     decay_method = args.decay_type
     start_deterministic = args.start_deterministic
-    log_interval = args.log_interval
+    log_interval = 1
     batch_size = args.batch_size
     lr = args.lr
     DS = args.DS
     selector = args.d
+    isSaveckpt = args.ckpt
     augmentation_type = args.aug
+    init_temp = args.init_temp
+    cosine_factor = args.cosine_factor
+    exp_factor = args.exp_factor
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    save_name = args.save
+    args.save = '{}-{}-{}-{}-{}'.format(args.dataset, args.save, start_time)
+    args.save = os.path.join('logs', save_name, args.dataset, args.save)
+    create_exp_dir(args.save, None)
+    # create_exp_dir(args.save, glob.glob('*.py'))
+    log_file = open(f'./logs/{args.save}/log.txt', 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
+    
     ordecay = args.ordecay
     
     # path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
@@ -345,9 +373,12 @@ if __name__ == '__main__':
     print('hidden_dim: {}'.format(args.hidden_dim))
     print('num_gc_layers: {}'.format(args.num_gc_layers))
     print('================')
-
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
+    log_file.write('================\n')
+    log_file.write('lr: {}\n'.format(lr))
+    log_file.write('num_features: {}\n'.format(dataset_num_features))
+    log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
+    log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
+    log_file.write('================\n')
 
     best_test_acc_before = 0
     best_test_std_before = 0
@@ -367,6 +398,9 @@ if __name__ == '__main__':
             data = data.to(device)
 
             aug_data_batch_1,  aug_data_batch_2= generate_views_with_temperature(
+                                                    init_temp,
+                                                    cosine_factor, 
+                                                    exp_factor,
                                                     data,
                                                     anchor_model,
                                                     current_epoch=epoch,
@@ -402,7 +436,12 @@ if __name__ == '__main__':
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
+                if isSaveckpt:
+                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
+    log_file.write('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
     print('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    if isSaveckpt:
+        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
 
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('End Time: {}'.format(end_time))
@@ -413,5 +452,5 @@ if __name__ == '__main__':
 
     print('Elapsed Time: {}\n'.format(elapsed_time))
 
-    with open('logs/log_' + args.DS + '_' + args.aug, 'a+') as f:
+    with open('logs/log_' + args.DS + '_' + args.aug + '_decay_method_' + args.decay_type + '_selector_'+args.d , 'a+') as f:
         f.write('{},{:.2f},{:.2f}\n'.format(args.DS, best_test_acc*100, best_test_std*100))

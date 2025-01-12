@@ -214,7 +214,11 @@ if __name__ == '__main__':
     DS = args.DS
     selector = args.d
     log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    log_file = open(f'./logs/log_gcl_gcl_{DS}_{start_time}.txt', 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=args.aug, transform=T.Compose([Add_Indices()])).shuffle()
@@ -248,22 +252,18 @@ if __name__ == '__main__':
     # print(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    print('================')
-    print('lr: {}'.format(lr))
-    print('num_features: {}'.format(dataset_num_features))
-    print('hidden_dim: {}'.format(args.hidden_dim))
-    print('num_gc_layers: {}'.format(args.num_gc_layers))
-    print('================')
-    log_file.write('================\n')
-    log_file.write('lr: {}\n'.format(lr))
-    log_file.write('num_features: {}\n'.format(dataset_num_features))
-    log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
-    log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
-    log_file.write('================\n')
-
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
-    log_file.write('Start Time: {}\n'.format(start_time))
+    # print('================')
+    # print('lr: {}'.format(lr))
+    # print('num_features: {}'.format(dataset_num_features))
+    # print('hidden_dim: {}'.format(args.hidden_dim))
+    # print('num_gc_layers: {}'.format(args.num_gc_layers))
+    # print('================')
+    # log_file.write('================\n')
+    # log_file.write('lr: {}\n'.format(lr))
+    # log_file.write('num_features: {}\n'.format(dataset_num_features))
+    # log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
+    # log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
+    # log_file.write('================\n')
 
     best_test_acc_before = 0
     best_test_std_before = 0

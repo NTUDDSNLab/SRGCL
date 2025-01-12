@@ -155,38 +155,61 @@ class simclr(nn.Module):
 
         return loss
 
-def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated_views_num=50, augmentation_type='dnodes'):
+def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
     aug_ratio = args.r
     aug_data_list_1 = []
     aug_data_list_2 = []
+    
+    # 記錄各種 augmentation 的統計
+    augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
+    
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
         aug_data_list = []
-        for _ in range(generated_views_num):
+        
+        if augmentation_type == 'hybrid':
+            hybrid_count = round(generated_views_num / 3)
+            aug_types = ['dnodes', 'pedges', 'mask_nodes']
+            hybrid_augmentation_list = aug_types * hybrid_count
+        else:
+            hybrid_augmentation_list = [augmentation_type] * generated_views_num
+        
+        for aug_type in hybrid_augmentation_list:
             graph = original_graph.clone()
-            if augmentation_type == 'dnodes':
+            if aug_type == 'dnodes':
                 graph.edge_index, _, graph_node_mask = dropout_node(graph.edge_index, aug_ratio)
                 graph_node_mask = graph_node_mask.cpu().detach().numpy().astype(int)
                 feature_size = graph.x.shape[1]
                 graph_node_mask_2d = np.tile(graph_node_mask, (feature_size, 1))
                 graph_node_mask_2d = torch.from_numpy(np.transpose(graph_node_mask_2d)).to(device)
                 graph.x = graph.x * graph_node_mask_2d
-                aug_data_list.append(graph)
-            elif augmentation_type == 'pedges':
+                aug_data_list.append((graph, 'dnodes'))
+            elif aug_type == 'pedges':
                 graph.edge_index, _ = dropout_edge(graph.edge_index, aug_ratio)
                 graph.edge_index = graph.edge_index.to(torch.long)
-                aug_data_list.append(graph)
-            elif augmentation_type == 'mask_nodes':
+                aug_data_list.append((graph, 'pedges'))
+            elif aug_type == 'mask_nodes':
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
-                aug_data_list.append(graph)
+                aug_data_list.append((graph, 'mask_nodes'))
+        
         distances = []
-        for aug_graph in aug_data_list:
+        for aug_graph, aug_type in aug_data_list:
             distance = calculate_distance(original_graph, aug_graph, anchor_model, selector)
-            distances.append((distance, aug_graph))
+            distances.append((distance, aug_graph, aug_type))
         distances.sort(key=lambda x: x[0])
-        # print(distances)
+        
         aug_data_list_1.append(distances[0][1])
+        augmentation_counts[distances[0][2]] += 1
         aug_data_list_2.append(distances[1][1])
+        augmentation_counts[distances[1][2]] += 1
+    
+    # total_augmentations = sum(augmentation_counts.values())
+    # ratio = {k: v / total_augmentations for k, v in augmentation_counts.items()}
+    # print("Augmentation Ratios", ratio)
+    # log_file.write('Augmentation Ratios: {}\n'.format(ratio))
+    if total_augmentation_counts is not None:
+        for k in augmentation_counts:
+            total_augmentation_counts[k] += augmentation_counts[k]
 
 
     augmented_data_batch_1 = Batch.from_data_list(aug_data_list_1)
@@ -201,8 +224,8 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     with torch.no_grad():
         original_embedding = anchor_model(original_batch.x, original_batch.edge_index, original_batch.batch, original_batch.num_graphs)
         aug_embedding = anchor_model(aug_batch.x, aug_batch.edge_index, aug_batch.batch, aug_batch.num_graphs)
-    original_embedding = original_embedding[0]
-    aug_embedding = aug_embedding[0]
+    # original_embedding = original_embedding[0]
+    # aug_embedding = aug_embedding[0]
 
     if(selector == 'cosine'):
         cosine_sim = F.cosine_similarity(original_embedding, aug_embedding)
@@ -239,7 +262,7 @@ if __name__ == '__main__':
     topk_views_cl = args.k
     ordecay = args.ordecay
 
-    log_interval = 10
+    log_interval = args.log_interval
     batch_size = args.batch_size
     lr = args.lr
     DS = args.DS
@@ -249,6 +272,10 @@ if __name__ == '__main__':
     path = osp.join('/disk_195a/qiannnhui/data', DS)
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    log_file = open(f'./logs/log_gcl_gcl_{DS}_{augmentation_type}_{start_time}.txt', 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
     dataset_eval = TUDataset(path, name=DS, aug='none').shuffle()
 
@@ -265,21 +292,26 @@ if __name__ == '__main__':
     # print(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    print('================')
-    print('lr: {}'.format(lr))
-    print('num_features: {}'.format(dataset_num_features))
-    print('hidden_dim: {}'.format(args.hidden_dim))
-    print('num_gc_layers: {}'.format(args.num_gc_layers))
-    print('================')
-
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
+    # print('================')
+    # print('lr: {}'.format(lr))
+    # print('num_features: {}'.format(dataset_num_features))
+    # print('hidden_dim: {}'.format(args.hidden_dim))
+    # print('num_gc_layers: {}'.format(args.num_gc_layers))
+    # print('================')
+    # log_file.write('================\n')
+    # log_file.write('lr: {}\n'.format(lr))
+    # log_file.write('num_features: {}\n'.format(dataset_num_features))
+    # log_file.write('hidden_dim: {}\n'.format(args.hidden_dim))
+    # log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
+    # log_file.write('================\n')
 
     best_test_acc_before = 0
     best_test_std_before = 0
 
     best_test_acc = 0
     best_test_std = 0
+
+    total_augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
 
     for epoch in range(1, epochs+1):
         loss_all = 0
@@ -292,7 +324,7 @@ if __name__ == '__main__':
             # data_aug = get_augmentation(data, args.aug)
             data = data.to(device)
 
-            aug_data_batch_1,  aug_data_batch_2= generate_aug_data_batch(data, anchor_model, topk_views_cl, generated_views_num, augmentation_type)
+            aug_data_batch_1,  aug_data_batch_2 = generate_aug_data_batch(data, anchor_model, topk_views_cl, generated_views_num, augmentation_type, total_augmentation_counts)
             aug_data_batch_1 = aug_data_batch_1.to(device)
             aug_data_batch_2 = aug_data_batch_2.to(device)
 
@@ -331,6 +363,13 @@ if __name__ == '__main__':
     elapsed_time = end_time_obj - start_time_obj
 
     print('Elapsed Time: {}\n'.format(elapsed_time))
+    log_file.write('Elapsed Time: {}\n'.format(elapsed_time))
+
+    total_augmentations = sum(total_augmentation_counts.values())
+    final_ratio = {k: v / total_augmentations for k, v in total_augmentation_counts.items()}
+    print("Final Augmentation Ratios:", final_ratio)
+    log_file.write(f'Final Augmentation Ratios: {final_ratio}\n')
+    log_file.close()
 
     with open('logs/log_' + args.DS + '_' + args.aug, 'a+') as f:
         f.write('{},{:.2f},{:.2f}\n'.format(args.DS, best_test_acc*100, best_test_std*100))
