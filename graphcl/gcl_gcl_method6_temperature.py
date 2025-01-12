@@ -231,7 +231,7 @@ def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
                         
                 # 執行 subgraph sampling
                 node_num, _ = graph.x.size()
-                sub_num = int(node_num * (1 - aug_ratio))  # 保留的節點數量
+                sub_num = int(node_num * (aug_ratio))  # 保留的節點數量
                         
                 # 隨機選擇起始節點
                 idx_sub = [np.random.randint(node_num, size=1)[0]]
