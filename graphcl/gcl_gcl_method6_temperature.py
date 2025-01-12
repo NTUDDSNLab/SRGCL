@@ -418,7 +418,8 @@ if __name__ == '__main__':
             
             loss = model.loss_cal(x_aug1, x_aug2)
             loss_all += loss.item() * data.num_graphs
-            loss_all += l2_reg_ortho(model) * ordecay
+            if args.or_loss:
+                loss_all += l2_reg_ortho(model) * ordecay
             loss.backward()
             optimizer.step()
 
