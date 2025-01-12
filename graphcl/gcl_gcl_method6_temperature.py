@@ -36,13 +36,13 @@ from torch.autograd import Variable
 from copy import deepcopy
 
 from torch_geometric.data import Batch, Data
-from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, dropout_node
+from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, dropout_node, subgraph
 from aug import subgraph
 import math
 import random
 import collections
 # from datetime import datetime
-
+import scipy
 
 class GcnInfomax(nn.Module):
   def __init__(self, hidden_dim, num_gc_layers, alpha=0.5, beta=1., gamma=.1):
@@ -193,6 +193,52 @@ def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_
     
     return max(0, min(init_temp, temperature))
 
+def optimized_subgraph_sampling(original_graph, aug_ratio):
+    graph = original_graph.clone()
+    
+    node_num, _ = graph.x.size()
+    sub_num = int(node_num * aug_ratio)
+    
+    # 使用 CSR 矩陣預處理邊
+    edge_index = graph.edge_index.cpu().numpy()
+    adj_matrix = scipy.sparse.csr_matrix(
+        (np.ones(edge_index.shape[1]), 
+        (edge_index[0], edge_index[1])), 
+        shape=(node_num, node_num)
+    )
+    
+    idx_sub = {np.random.randint(node_num)}
+    idx_neigh = set(adj_matrix[list(idx_sub)[0]].indices)
+    
+    while len(idx_sub) <= sub_num:
+        if not idx_neigh:
+            break
+            
+        sample_node = np.random.choice(list(idx_neigh))
+        idx_sub.add(sample_node)
+        idx_neigh.update(adj_matrix[sample_node].indices)
+        idx_neigh -= idx_sub
+    
+    idx_sub = list(idx_sub)
+    idx_drop = list(set(range(node_num)) - set(idx_sub))
+    
+    # 使用稀疏操作
+    adj_matrix[idx_drop, :] = 0
+    adj_matrix[:, idx_drop] = 0
+    
+    new_edge_index = torch.tensor(np.array(adj_matrix.nonzero()), 
+                                device=original_graph.x.device, dtype=torch.int64)
+    
+    # 批量更新節點特徵
+    mask = torch.ones(node_num, device=original_graph.x.device)
+    mask[idx_drop] = 0
+    graph.x = graph.x * mask.view(-1, 1)
+    graph.edge_index = new_edge_index
+    
+    return graph
+
+
+
 def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
                                 data_batch, anchor_model, current_epoch=0, max_epoch=30, 
                                   start_deterministic=20, decay_method='exponential',
@@ -227,56 +273,8 @@ def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
                 aug_data_list.append(graph)
             elif augmentation_type == 'subgraph':
-                graph = original_graph.clone()
-                        
-                # 執行 subgraph sampling
-                node_num, _ = graph.x.size()
-                sub_num = int(node_num * (aug_ratio))  # 保留的節點數量
-                        
-                # 隨機選擇起始節點
-                idx_sub = [np.random.randint(node_num, size=1)[0]]
-                edge_index = graph.edge_index.cpu().numpy()
-                        
-                # 獲取鄰居節點
-                idx_neigh = set([n for n in edge_index[1][edge_index[0]==idx_sub[0]]])
-                        
-                # 迭代選擇節點直到達到目標大小
-                count = 0
-                while len(idx_sub) <= sub_num:
-                    count = count + 1
-                    if count > node_num or len(idx_neigh) == 0:
-                        break
-                                
-                    sample_node = np.random.choice(list(idx_neigh))
-                    if sample_node in idx_sub:
-                        continue
-                                
-                    idx_sub.append(sample_node)
-                    idx_neigh.union(set([n for n in edge_index[1][edge_index[0]==idx_sub[-1]]]))
-                        
-                # 構建新的圖
-                idx_drop = [n for n in range(node_num) if not n in idx_sub]
-                        
-                # 使用稀疏矩陣更新邊
-                adj = torch.zeros((node_num, node_num))
-                adj[edge_index[0], edge_index[1]] = 1
-                adj[idx_drop, :] = 0
-                adj[:, idx_drop] = 0
-                        
-                # 更新邊索引
-                new_edge_index = adj.nonzero().t()
-                        
-                # 更新圖的屬性
-                graph.edge_index = new_edge_index.to(device)
-                        
-                # 更新節點特徵
-                mask = torch.ones(node_num)
-                mask[idx_drop] = 0
-                mask = mask.view(-1, 1)
-                graph.x = graph.x * mask.to(device)
-                        
-                aug_data_list.append(graph)
-
+                aug_graph = optimized_subgraph_sampling(graph, aug_ratio)
+                aug_data_list.append(aug_graph)
 
         # 計算距離
         distances = []
