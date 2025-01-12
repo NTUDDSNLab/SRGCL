@@ -41,6 +41,7 @@ import math
 import random
 import collections
 from check_dim_collapse import check_dimensional_collapse
+from ortho_loss import l2_reg_ortho
 # from datetime import datetime
 
 
@@ -238,14 +239,12 @@ def generate_views_with_temperature(data_batch, anchor_model, current_epoch=0, m
     aug_data_list_1 = []
     aug_data_list_2 = []
     
-    # 計算當前溫度
     temperature = calculate_temperature(current_epoch, max_epoch, start_deterministic, decay_method)
     
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
         aug_data_list = []
         
-        # 生成增強視圖
         for _ in range(generated_views_num):
             graph = original_graph.clone()
             if augmentation_type == 'dnodes':
@@ -264,20 +263,16 @@ def generate_views_with_temperature(data_batch, anchor_model, current_epoch=0, m
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
                 aug_data_list.append(graph)
                 
-        # 計算距離
         distances = []
         for aug_graph in aug_data_list:
             distance = calculate_distance(original_graph, aug_graph, anchor_model, selector)
             distances.append((distance, aug_graph))
             
-        # 根據溫度進行選擇
         if temperature > 0:
-            # 使用溫度控制的隨機選擇
             weights = torch.softmax(-torch.tensor([d[0] for d in distances]) / temperature, dim=0)
             indices = torch.multinomial(weights, 2, replacement=False)
             selected_graphs = [distances[i.item()][1] for i in indices]
         else:
-            # 完全確定性選擇
             distances.sort(key=lambda x: x[0])
             selected_graphs = [distances[0][1], distances[1][1]]
             
@@ -322,6 +317,7 @@ if __name__ == '__main__':
     DS = args.DS
     selector = args.d
     augmentation_type = args.aug
+    ordecay = args.ordecay
     
     # path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
     path = osp.join('/disk_195a/qiannnhui/data', DS)
@@ -388,6 +384,7 @@ if __name__ == '__main__':
             
             loss = model.loss_cal(x_aug1, x_aug2)
             loss_all += loss.item() * data.num_graphs
+            loss_all += l2_reg_ortho(model) * ordecay
             loss.backward()
             optimizer.step()
 

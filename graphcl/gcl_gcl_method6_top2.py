@@ -42,6 +42,7 @@ import math
 import random
 import collections
 from check_dim_collapse import check_dimensional_collapse
+from ortho_loss import l2_reg_ortho
 # from datetime import datetime
 
 
@@ -236,6 +237,7 @@ if __name__ == '__main__':
     epochs = args.epochs
     generated_views_num = args.v
     topk_views_cl = args.k
+    ordecay = args.ordecay
 
     log_interval = 10
     batch_size = args.batch_size
@@ -301,6 +303,7 @@ if __name__ == '__main__':
             
             loss = model.loss_cal(x_aug1, x_aug2)
             loss_all += loss.item() * data.num_graphs
+            loss_all += l2_reg_ortho(model)
             loss.backward()
             optimizer.step()
 
