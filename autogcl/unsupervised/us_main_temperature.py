@@ -408,8 +408,6 @@ def eval_acc(model, data_loader, device):
 
 def cl_exp(args):
     set_seed(args.seed)
-
-    joint_log_name = 'joint_log_{}.txt'.format(args.save)
     save_name = args.save
     args.save = '{}-{}-{}-{}-{}'.format(args.decay_type ,args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
     args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)

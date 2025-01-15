@@ -391,7 +391,7 @@ if __name__ == '__main__':
             accuracies['val'].append(test_acc)
             accuracies['test'].append(test_std)
             print('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
-            log_file.write('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epochs, test_acc*100, test_std*100))
+            log_file.write('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
 
             if test_acc > best_test_acc:
                 best_test_acc = test_acc

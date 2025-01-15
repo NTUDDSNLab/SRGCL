@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import numpy as np
 import json
 import random
+import shutil
 import datetime
 from torch_sparse import SparseTensor
 from aug_gcl import TUDataset_aug as TUDataset
@@ -30,8 +31,7 @@ from evaluate_embedding import evaluate_embedding
 from aug_output import get_augmentation
 import torch_geometric.transforms as T
 from torch_geometric.transforms import Constant, BaseTransform
-import pdb
-import logging
+import time
 from torch.autograd import Variable
 from copy import deepcopy
 
@@ -316,7 +316,17 @@ def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
 
     return augmented_data_batch_1, augmented_data_batch_2
 
+def create_exp_dir(path, scripts_to_save=None):
+    if not os.path.exists(path):
+        os.makedirs(path)        
+        os.mkdir(os.path.join(path, 'model'))
 
+    print('Experiment dir : {}'.format(path))
+    if scripts_to_save is not None:
+        os.mkdir(os.path.join(path, 'scripts'))
+        for script in scripts_to_save:
+            dst_file = os.path.join(path, 'scripts', os.path.basename(script))
+            shutil.copyfile(script, dst_file)
 
 def setup_seed(seed):
 
@@ -335,10 +345,16 @@ if __name__ == '__main__':
     
     args = arg_parse()
     setup_seed(args.seed)
+    save_name = args.save
+    args.save = '{}-{}-{}-{}-{}'.format(args.DS, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
+    args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
+    # create_exp_dir(args.save, glob.glob('*.py'))
+    create_exp_dir(args.save, None)
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     accuracies = {'val':[], 'test':[]}
     accuracies_before = {'val':[], 'test':[]}
     epochs = args.epochs
+    isSaveckpt = args.ckpt
     generated_views_num = args.v
     topk_views_cl = args.k
     decay_method = args.decay_type
@@ -352,12 +368,15 @@ if __name__ == '__main__':
     init_temp = args.init_temp
     cosine_factor = args.cosine_factor
     exp_factor = args.exp_factor
-    
-    log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
+
     path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    log_file_path = os.path.join(args.save, f'log_{augmentation_type}.txt')
+    log_file = open(log_file_path, 'w')
+    log_file.write('Start Time: {}\n'.format(start_time))
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
-    # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
     dataset_eval = TUDataset(path, name=DS, aug='none').shuffle()
 
@@ -387,22 +406,8 @@ if __name__ == '__main__':
     log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
     log_file.write('================\n')
 
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
-    log_file.write('Start Time: {}\n'.format(start_time))
-
     best_test_acc_before = 0
     best_test_std_before = 0
-    
-    best_checkpoint_path = f'pretrain/{args.DS}/{args.aug}/{start_time}/best_model.ckpt'
-    final_checkpoint_path = f'pretrain/{args.DS}/{args.aug}/{start_time}/final_model.ckpt'
-
-    # Create directories if they don't exist
-    best_checkpoint_dir = os.path.dirname(best_checkpoint_path)
-    final_checkpoint_dir = os.path.dirname(final_checkpoint_path)
-
-    os.makedirs(best_checkpoint_dir, exist_ok=True)
-    os.makedirs(final_checkpoint_dir, exist_ok=True)
     
     best_test_acc = 0
     best_test_std = 0
@@ -455,18 +460,20 @@ if __name__ == '__main__':
             accuracies['val'].append(test_acc)
             accuracies['test'].append(test_std)
             print('Epoch: {}, Test Acc: {:.2f} '.format(epoch, test_acc*100))
-            log_file.write('Epoch: {}, Test Acc: {:.2f} '.format(epochs, test_acc*100))
+            log_file.write('Epoch: {}, Test Acc: {:.2f} '.format(epoch, test_acc*100))
             
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
-                torch.save(model.state_dict(), best_checkpoint_path)
+                if isSaveckpt:
+                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
             
     log_file.write('Final Test Acc: {:.2f} '.format(test_acc*100))
     print('Final Test Acc: {:.2f} '.format(test_acc*100))
     log_file.write('Best Test Acc: {:.2f} '.format(best_test_acc*100))
     print('Best Test Acc: {:.2f} '.format(best_test_acc*100))
-    torch.save(model.state_dict(), final_checkpoint_path)
+    if isSaveckpt:
+        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
     
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('End Time: {}'.format(end_time))
