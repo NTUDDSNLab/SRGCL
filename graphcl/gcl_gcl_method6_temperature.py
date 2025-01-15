@@ -346,8 +346,8 @@ if __name__ == '__main__':
     args = arg_parse()
     setup_seed(args.seed)
     save_name = args.save
-    args.save = '{}-{}-{}-{}-{}'.format(args.DS, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
-    args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
+    args.save = '{}-{}-{}-{}'.format(args.DS, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
+    args.save = os.path.join('unsupervised_exp', save_name, args.DS, args.save)
     # create_exp_dir(args.save, glob.glob('*.py'))
     create_exp_dir(args.save, None)
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
@@ -369,8 +369,8 @@ if __name__ == '__main__':
     cosine_factor = args.cosine_factor
     exp_factor = args.exp_factor
 
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
-    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    # path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('Start Time: {}'.format(start_time))
     log_file_path = os.path.join(args.save, f'log_{augmentation_type}.txt')
