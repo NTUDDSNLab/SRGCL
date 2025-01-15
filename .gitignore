@@ -10,6 +10,7 @@ autogcl/__pycache__/
 adgcl/__pycache__/
 graphcl/data/
 graphcl/logs/
+graphcl/unsupervised_exp/
 graphcl/pretrain/
 autogcl/data/
 adgcl/data/
