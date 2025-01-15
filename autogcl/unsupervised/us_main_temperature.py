@@ -436,7 +436,7 @@ def cl_exp(args):
     
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     epochs = args.epochs
-    log_interval = 1
+    log_interval = 5
     batch_size = args.batch_size
     generated_views_num = args.v
     topk_views_cl = args.k

@@ -65,9 +65,10 @@ def arg_parse():
     parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--save', type=str, default = 'with_sim_loss', help='')
+    parser.add_argument('--save', type=str, default = 'SR_AutoGCL', help='')
     parser.add_argument('--batch_size', type=int, default = 128, help='')
     parser.add_argument('--epochs', type=int, default = 30, help='')
+    parser.add_argument('--ckpt', type=bool, default=True)
 
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
@@ -326,6 +327,7 @@ def cl_exp(args):
     generated_views_num = args.v
     topk_views_cl = args.k
     lr = args.lr
+    isSaveckpt = args.ckpt
     selector = args.d
     dataset = get_dataset(args.dataset, sparse=True, feat_str='deg+odeg100', root='../../data')
     dataset = dataset.shuffle()
@@ -368,10 +370,14 @@ def cl_exp(args):
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
+                if isSaveckpt:
+                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
             logger.info("*" * 50)
             logger.info("Evaluating embedding...")
             logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
     logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
+    if isSaveckpt:
+        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
 
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     start_time_obj = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
