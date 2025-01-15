@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import json
+import scipy
 import random
 import datetime
 from torch_sparse import SparseTensor
@@ -37,7 +38,8 @@ from torch.autograd import Variable
 from copy import deepcopy
 
 from torch_geometric.data import Batch, Data
-from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, dropout_node
+from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, dropout_node, subgraph
+from aug import subgraph
 import math
 import random
 import collections
@@ -152,6 +154,50 @@ class simclr(nn.Module):
         loss = - torch.log(loss).mean()
 
         return loss
+    
+def optimized_subgraph_sampling(original_graph, aug_ratio):
+    graph = original_graph.clone()
+    
+    node_num, _ = graph.x.size()
+    sub_num = int(node_num * aug_ratio)
+    
+    # 使用 CSR 矩陣預處理邊
+    edge_index = graph.edge_index.cpu().numpy()
+    adj_matrix = scipy.sparse.csr_matrix(
+        (np.ones(edge_index.shape[1]), 
+        (edge_index[0], edge_index[1])), 
+        shape=(node_num, node_num)
+    )
+    
+    idx_sub = {np.random.randint(node_num)}
+    idx_neigh = set(adj_matrix[list(idx_sub)[0]].indices)
+    
+    while len(idx_sub) <= sub_num:
+        if not idx_neigh:
+            break
+            
+        sample_node = np.random.choice(list(idx_neigh))
+        idx_sub.add(sample_node)
+        idx_neigh.update(adj_matrix[sample_node].indices)
+        idx_neigh -= idx_sub
+    
+    idx_sub = list(idx_sub)
+    idx_drop = list(set(range(node_num)) - set(idx_sub))
+    
+    # 使用稀疏操作
+    adj_matrix[idx_drop, :] = 0
+    adj_matrix[:, idx_drop] = 0
+    
+    new_edge_index = torch.tensor(np.array(adj_matrix.nonzero()), 
+                                device=original_graph.x.device, dtype=torch.int64)
+    
+    # 批量更新節點特徵
+    mask = torch.ones(node_num, device=original_graph.x.device)
+    mask[idx_drop] = 0
+    graph.x = graph.x * mask.view(-1, 1)
+    graph.edge_index = new_edge_index
+    
+    return graph
 
 def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
     aug_ratio = args.r
@@ -159,15 +205,15 @@ def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated
     aug_data_list_2 = []
     
     # 記錄各種 augmentation 的統計
-    augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
+    augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0, 'subgraph': 0}
     
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
         aug_data_list = []
         
         if augmentation_type == 'hybrid':
-            hybrid_count = round(generated_views_num / 3)
-            aug_types = ['dnodes', 'pedges', 'mask_nodes']
+            hybrid_count = round(generated_views_num / 4)
+            aug_types = ['dnodes', 'pedges', 'mask_nodes', 'subgraph']
             hybrid_augmentation_list = aug_types * hybrid_count
         else:
             hybrid_augmentation_list = [augmentation_type] * generated_views_num
@@ -189,6 +235,9 @@ def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated
             elif aug_type == 'mask_nodes':
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
                 aug_data_list.append((graph, 'mask_nodes'))
+            elif augmentation_type == 'subgraph':
+                graph = optimized_subgraph_sampling(graph, aug_ratio)
+                aug_data_list.append((graph, 'subgraph'))
         
         distances = []
         for aug_graph, aug_type in aug_data_list:
@@ -305,7 +354,7 @@ if __name__ == '__main__':
     best_test_acc = 0
     best_test_std = 0
 
-    total_augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0}
+    total_augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0, 'subgraph': 0}
 
     for epoch in range(1, epochs+1):
         loss_all = 0
