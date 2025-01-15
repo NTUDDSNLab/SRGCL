@@ -15,7 +15,6 @@ import torch.nn.functional as F
 import numpy as np
 import json
 import random
-import shutil
 import datetime
 from torch_sparse import SparseTensor
 from aug_gcl import TUDataset_aug as TUDataset
@@ -37,12 +36,13 @@ from torch.autograd import Variable
 from copy import deepcopy
 
 from torch_geometric.data import Batch, Data
-from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, dropout_node
+from torch_geometric.utils import dropout_edge, add_random_edge, mask_feature, dropout_node, subgraph
+from aug import subgraph
 import math
 import random
 import collections
 # from datetime import datetime
-
+import scipy
 
 class GcnInfomax(nn.Module):
   def __init__(self, hidden_dim, num_gc_layers, alpha=0.5, beta=1., gamma=.1):
@@ -153,44 +153,6 @@ class simclr(nn.Module):
 
         return loss
 
-def generate_aug_data_batch(data_batch, anchor_model, topk_views_cl=2, generated_views_num=50, augmentation_type='dnodes'):
-    aug_ratio = args.r
-    aug_data_list_1 = []
-    aug_data_list_2 = []
-    for graph in data_batch.to_data_list():        
-        original_graph = graph.clone()
-        aug_data_list = []
-        for _ in range(generated_views_num):
-            graph = original_graph.clone()
-            if augmentation_type == 'dnodes':
-                graph.edge_index, _, graph_node_mask = dropout_node(graph.edge_index, aug_ratio)
-                graph_node_mask = graph_node_mask.cpu().detach().numpy().astype(int)
-                feature_size = graph.x.shape[1]
-                graph_node_mask_2d = np.tile(graph_node_mask, (feature_size, 1))
-                graph_node_mask_2d = torch.from_numpy(np.transpose(graph_node_mask_2d)).to(device)
-                graph.x = graph.x * graph_node_mask_2d
-                aug_data_list.append(graph)
-            elif augmentation_type == 'pedges':
-                graph.edge_index, _ = dropout_edge(graph.edge_index, aug_ratio)
-                graph.edge_index = graph.edge_index.to(torch.long)
-                aug_data_list.append(graph)
-            elif augmentation_type == 'mask_nodes':
-                graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
-                aug_data_list.append(graph)
-        distances = []
-        for aug_graph in aug_data_list:
-            distance = calculate_distance(original_graph, aug_graph, anchor_model, selector)
-            distances.append((distance, aug_graph))
-        distances.sort(key=lambda x: x[0])
-        # print(distances)
-        aug_data_list_1.append(distances[0][1])
-        aug_data_list_2.append(distances[1][1])
-
-
-    augmented_data_batch_1 = Batch.from_data_list(aug_data_list_1)
-    augmented_data_batch_2 = Batch.from_data_list(aug_data_list_2)
-
-    return augmented_data_batch_1, augmented_data_batch_2
 
 def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     anchor_model.eval()
@@ -231,6 +193,52 @@ def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_
     
     return max(0, min(init_temp, temperature))
 
+def optimized_subgraph_sampling(original_graph, aug_ratio):
+    graph = original_graph.clone()
+    
+    node_num, _ = graph.x.size()
+    sub_num = int(node_num * aug_ratio)
+    
+    # 使用 CSR 矩陣預處理邊
+    edge_index = graph.edge_index.cpu().numpy()
+    adj_matrix = scipy.sparse.csr_matrix(
+        (np.ones(edge_index.shape[1]), 
+        (edge_index[0], edge_index[1])), 
+        shape=(node_num, node_num)
+    )
+    
+    idx_sub = {np.random.randint(node_num)}
+    idx_neigh = set(adj_matrix[list(idx_sub)[0]].indices)
+    
+    while len(idx_sub) <= sub_num:
+        if not idx_neigh:
+            break
+            
+        sample_node = np.random.choice(list(idx_neigh))
+        idx_sub.add(sample_node)
+        idx_neigh.update(adj_matrix[sample_node].indices)
+        idx_neigh -= idx_sub
+    
+    idx_sub = list(idx_sub)
+    idx_drop = list(set(range(node_num)) - set(idx_sub))
+    
+    # 使用稀疏操作
+    adj_matrix[idx_drop, :] = 0
+    adj_matrix[:, idx_drop] = 0
+    
+    new_edge_index = torch.tensor(np.array(adj_matrix.nonzero()), 
+                                device=original_graph.x.device, dtype=torch.int64)
+    
+    # 批量更新節點特徵
+    mask = torch.ones(node_num, device=original_graph.x.device)
+    mask[idx_drop] = 0
+    graph.x = graph.x * mask.view(-1, 1)
+    graph.edge_index = new_edge_index
+    
+    return graph
+
+
+
 def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
                                 data_batch, anchor_model, current_epoch=0, max_epoch=30, 
                                   start_deterministic=20, decay_method='exponential',
@@ -264,7 +272,10 @@ def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
             elif augmentation_type == 'mask_nodes':
                 graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
                 aug_data_list.append(graph)
-                
+            elif augmentation_type == 'subgraph':
+                aug_graph = optimized_subgraph_sampling(graph, aug_ratio)
+                aug_data_list.append(aug_graph)
+
         # 計算距離
         distances = []
         for aug_graph in aug_data_list:
@@ -300,18 +311,6 @@ def setup_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-def create_exp_dir(path, scripts_to_save=None):
-    if not os.path.exists(path):
-        os.makedirs(path)        
-        os.mkdir(os.path.join(path, 'model'))
-
-    print('Experiment dir : {}'.format(path))
-    if scripts_to_save is not None:
-        os.mkdir(os.path.join(path, 'scripts'))
-        for script in scripts_to_save:
-            dst_file = os.path.join(path, 'scripts', os.path.basename(script))
-            shutil.copyfile(script, dst_file)
-
 class Add_Indices(BaseTransform):
     def __call__(self, data):
         data.indices = torch.tensor([0])
@@ -334,22 +333,13 @@ if __name__ == '__main__':
     lr = args.lr
     DS = args.DS
     selector = args.d
-    isSaveckpt = args.ckpt
     augmentation_type = args.aug
     init_temp = args.init_temp
     cosine_factor = args.cosine_factor
     exp_factor = args.exp_factor
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('Start Time: {}'.format(start_time))
-    save_name = args.save
-    args.save = '{}-{}-{}-{}-{}'.format(args.dataset, args.save, start_time)
-    args.save = os.path.join('logs', save_name, args.dataset, args.save)
-    create_exp_dir(args.save, None)
-    # create_exp_dir(args.save, glob.glob('*.py'))
-    log_file = open(f'./logs/{args.save}/log.txt', 'w')
-    log_file.write('Start Time: {}\n'.format(start_time))
     
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', DS)
+    log_file = open(f'./logs/log_gcl_gcl_{DS}.txt', 'w')
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
     # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=None)
     # add transform to add indices
     dataset = TUDataset(path, name=DS, aug=augmentation_type, transform=T.Compose([Add_Indices()])).shuffle()
@@ -381,12 +371,27 @@ if __name__ == '__main__':
     log_file.write('num_gc_layers: {}\n'.format(args.num_gc_layers))
     log_file.write('================\n')
 
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print('Start Time: {}'.format(start_time))
+    log_file.write('Start Time: {}\n'.format(start_time))
+
     best_test_acc_before = 0
     best_test_std_before = 0
+    
+    best_checkpoint_path = f'pretrain/{args.DS}/{args.aug}/{start_time}/best_model.ckpt'
+    final_checkpoint_path = f'pretrain/{args.DS}/{args.aug}/{start_time}/final_model.ckpt'
 
+    # Create directories if they don't exist
+    best_checkpoint_dir = os.path.dirname(best_checkpoint_path)
+    final_checkpoint_dir = os.path.dirname(final_checkpoint_path)
+
+    os.makedirs(best_checkpoint_dir, exist_ok=True)
+    os.makedirs(final_checkpoint_dir, exist_ok=True)
+    
     best_test_acc = 0
     best_test_std = 0
-
+    test_acc = 0
+    test_std = 0 
     for epoch in range(1, epochs+1):
         loss_all = 0
         model.train()
@@ -424,26 +429,27 @@ if __name__ == '__main__':
 
         print('Epoch {}, Loss {}'.format(epoch, loss_all / len(dataloader.dataset)))
         log_file.write('Epoch {}, Loss {}\n'.format(epoch, loss_all / len(dataloader.dataset)))
-       
+        
         if epoch % log_interval == 0:
             model.eval()
             emb, y = model.encoder.get_embeddings(dataloader_eval)
             test_acc, test_std = evaluate_embedding(emb, y)
             accuracies['val'].append(test_acc)
             accuracies['test'].append(test_std)
-            print('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
-            log_file.write('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epochs, test_acc*100, test_std*100))
-
+            print('Epoch: {}, Test Acc: {:.2f} '.format(epoch, test_acc*100))
+            log_file.write('Epoch: {}, Test Acc: {:.2f} '.format(epochs, test_acc*100))
+            
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
-                if isSaveckpt:
-                    torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
-    log_file.write('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
-    print('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
-    if isSaveckpt:
-        torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
-
+                torch.save(model.state_dict(), best_checkpoint_path)
+            
+    log_file.write('Final Test Acc: {:.2f} '.format(test_acc*100))
+    print('Final Test Acc: {:.2f} '.format(test_acc*100))
+    log_file.write('Best Test Acc: {:.2f} '.format(best_test_acc*100))
+    print('Best Test Acc: {:.2f} '.format(best_test_acc*100))
+    torch.save(model.state_dict(), final_checkpoint_path)
+    
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('End Time: {}'.format(end_time))
     log_file.write('End Time: {}\n'.format(end_time))
@@ -457,4 +463,5 @@ if __name__ == '__main__':
     log_file.close()
 
     with open('logs/log_' + args.DS + '_' + args.aug + '_decay_method_' + args.decay_type + '_selector_'+args.d , 'a+') as f:
-        f.write('{},{:.2f},{:.2f}\n'.format(args.DS, best_test_acc*100, best_test_std*100))
+        f.write('Final accuracy: {},{:.2f}\n'.format(args.DS, test_acc*100))
+        f.write('Best accuracy: {},{:.2f}\n'.format(args.DS, best_test_acc*100))

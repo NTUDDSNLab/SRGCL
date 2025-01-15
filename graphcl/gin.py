@@ -56,9 +56,7 @@ class Encoder(torch.nn.Module):
 
         return x, torch.cat(xs, 1)
 
-    def get_embeddings(self, loader):
-        
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    def get_embeddings(self, loader, device):
         ret = []
         y = []
         with torch.no_grad():
@@ -76,9 +74,7 @@ class Encoder(torch.nn.Module):
         y = np.concatenate(y, 0)
         return ret, y
 
-    def get_embeddings_v(self, loader):
-
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    def get_embeddings_v(self, loader, device):
         ret = []
         y = []
         with torch.no_grad():
