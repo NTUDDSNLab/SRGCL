@@ -12,3 +12,4 @@ graphcl/data/
 graphcl/logs/
 autogcl/data/
 adgcl/data/
+countEval_AutoGCL.py
