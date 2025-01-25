@@ -174,14 +174,9 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     # return distances.mean().item()
     return distance
 
-import math
 
-def calculate_temperature(exp_factor, current_epoch, max_epoch, start_deterministic):
-    if current_epoch >= start_deterministic:
-        temperature = 0.0
-    else:
-        temperature = math.exp(-exp_factor * current_epoch * (max_epoch/start_deterministic))
-    
+def calculate_temperature(A0, k, current_epoch):
+    temperature = A0*math.exp(-k*current_epoch)
     return max(0, min(1, temperature))
 
 
@@ -233,8 +228,7 @@ def optimized_subgraph_sampling(original_graph, aug_ratio):
 
 
 def generate_views_with_temperature(exp_factor,data_batch, 
-                                anchor_model, current_epoch=0, max_epoch=30, 
-                                  start_deterministic=20, 
+                                anchor_model, current_epoch=0,
                                   generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
     aug_ratio = args.r
     aug_data_list_1 = []
@@ -243,7 +237,7 @@ def generate_views_with_temperature(exp_factor,data_batch,
     augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0, 'subgraph': 0}
     
     # 計算當前溫度
-    temperature = calculate_temperature(exp_factor,current_epoch, max_epoch, start_deterministic)
+    temperature = calculate_temperature(A0=1.0, k=exp_factor, current_epoch=current_epoch)
     
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
@@ -351,7 +345,6 @@ if __name__ == '__main__':
     generated_views_num = args.v
     topk_views_cl = args.k
     decay_method = args.decay_type
-    start_deterministic = args.start_deterministic
     log_interval = args.log_interval
     batch_size = args.batch_size
     lr = args.lr
@@ -360,8 +353,8 @@ if __name__ == '__main__':
     augmentation_type = args.aug
     exp_factor = args.exp_factor
 
-    # path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('Start Time: {}'.format(start_time))
     log_file_path = os.path.join(args.save, f'log_{augmentation_type}.txt')
@@ -421,8 +414,6 @@ if __name__ == '__main__':
                                                     data,
                                                     anchor_model,
                                                     current_epoch=epoch,
-                                                    max_epoch=epochs,
-                                                    start_deterministic=start_deterministic,
                                             generated_views_num=generated_views_num,
                                             augmentation_type=augmentation_type, 
                                             total_augmentation_counts=total_augmentation_counts
@@ -479,6 +470,6 @@ if __name__ == '__main__':
     log_file.write(f'Final Augmentation Ratios: {final_ratio}\n')
     log_file.close()
 
-    with open('logs/log_' + args.DS + '_' + args.aug + '_selector_'+args.d + '_exp_factor_{exp_factor}_start_deterministic_{start_deterministic}', 'a+') as f:
+    with open('logs/log_' + args.DS + '_' + args.aug + '_selector_'+args.d + f'_exp_factor_{exp_factor}_generate_views_{generated_views_num}', 'a+') as f:
         f.write('Final accuracy: {},{:.2f}\n'.format(args.DS, test_acc*100))
         f.write('Best accuracy: {},{:.2f}\n'.format(args.DS, best_test_acc*100))
