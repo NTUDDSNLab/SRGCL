@@ -19,7 +19,7 @@ def arg_parse():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--aug', type=str, default='dnodes', help='dnodes, pedges, mask_nodes, hybrid')
-    parser.add_argument('--r', default=0.2, type=float, help='aug_ratio')
+    parser.add_argument('--r', default=0.1, type=float, help='aug_ratio')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector (cosine, l2_norm)')

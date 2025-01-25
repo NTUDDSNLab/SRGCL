@@ -16,7 +16,7 @@ from torch_geometric.nn import GINConv, global_add_pool
 from torch_geometric.nn import GCNConv, GAE, VGAE
 from torch_geometric.utils import to_undirected, add_self_loops, remove_self_loops, negative_sampling, subgraph
 
-from IPython import embed
+# from IPython import embed
 
 class GIN_Classifier(torch.nn.Module):
     def __init__(self, dataset, dim):

@@ -18,7 +18,7 @@ import seaborn as sns
 
 import warnings
 
-from IPython import embed
+# from IPython import embed
 
 def draw_plot(datadir, DS, embeddings, fname, max_nodes=None):
     return

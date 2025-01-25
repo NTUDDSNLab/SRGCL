@@ -10,7 +10,7 @@ from image_dataset import ImageDataset
 # from tu_dataset import TUDatasetExt
 from torch_geometric.datasets import TUDataset
 
-from IPython import embed
+# from IPython import embed
 
 
 def get_dataset(name, sparse=True, feat_str="deg+ak3+reall", root=None):

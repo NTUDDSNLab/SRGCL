@@ -292,7 +292,9 @@ def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
         # 根據溫度進行選擇
         if temperature > 0:
             # 使用溫度控制的隨機選擇
-            weights = torch.softmax(-torch.tensor([d[0] for d in distances]) / temperature, dim=0)
+            weights = -torch.tensor([d[0] for d in distances]) / temperature
+            weights = torch.where(weights.isnan() | weights.isinf(), torch.zeros_like(weights), weights)    # deal with NaN and Inf (set to 0)
+            weights = torch.softmax(weights, dim=0)
             indices = torch.multinomial(weights, 2, replacement=False)
             selected_graphs = [distances[i.item()][1] for i in indices]
             selected_graphs_aug_counts = [distances[i.item()][2] for i in indices]
@@ -491,6 +493,21 @@ if __name__ == '__main__':
     log_file.write(f'Final Augmentation Ratios: {final_ratio}\n')
     log_file.close()
 
-    with open('logs/log_' + args.DS + '_' + args.aug + '_decay_method_' + args.decay_type + '_selector_'+args.d , 'a+') as f:
-        f.write('Final accuracy: {},{:.2f}\n'.format(args.DS, test_acc*100))
-        f.write('Best accuracy: {},{:.2f}\n'.format(args.DS, best_test_acc*100))
+    # with open('logs/log_' + args.DS + '_' + args.aug + '_decay_method_' + args.decay_type + '_selector_'+args.d , 'a+') as f:
+    #     f.write('Final accuracy: {},{:.2f}\n'.format(args.DS, test_acc*100))
+    #     f.write('Best accuracy: {},{:.2f}\n'.format(args.DS, best_test_acc*100))
+
+
+    if not os.path.exists("./logs"):
+        os.makedirs("./logs")
+    if not os.path.exists("./logs/GCL"):
+        os.makedirs("./logs/GCL")
+    if not os.path.exists(f"./logs/GCL/{args.DS}"):
+        os.makedirs(f"./logs/GCL/{args.DS}")
+
+    with open((f'./logs/GCL/{args.DS}/{args.DS}_'+str(args.seed)), 'a+') as f:
+        # s1 = json.dumps(stage_finish_epochs)
+        # s2 = json.dumps(loss_list)
+        s3 = json.dumps(accuracies)
+        f.write('{},{},{},{},{},{}\n'.format(args.DS, args.num_gc_layers, epochs, log_interval, lr, s3))
+    

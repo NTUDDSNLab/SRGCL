@@ -51,11 +51,11 @@ sys.path.append(os.path.abspath(os.path.join('..')))
 from datasets import get_dataset
 from view_generator import ViewGenerator, GIN_NodeWeightEncoder
 
-from IPython import embed
+# from IPython import embed
 
 def arg_parse():
     parser = argparse.ArgumentParser(description='GcnInformax Arguments.')
-    parser.add_argument('--dataset', dest='dataset', help='Dataset')
+    parser.add_argument('--dataset', dest='dataset', help='Dataset', default='MUTAG')
     parser.add_argument('--local', dest='local', action='store_const', const=True, default=False)
     parser.add_argument('--glob', dest='glob', action='store_const', const=True, default=False)
     parser.add_argument('--prior', dest='prior', action='store_const', const=True, default=False)
@@ -67,7 +67,7 @@ def arg_parse():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm', help='')
     parser.add_argument('--batch_size', type=int, default = 128, help='')
-    parser.add_argument('--epochs', type=int, default = 30, help='')
+    parser.add_argument('--epochs', type=int, default = 200, help='')
 
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
@@ -434,7 +434,7 @@ def cl_exp(args):
     
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     epochs = args.epochs
-    log_interval = 5
+    log_interval = 10
     batch_size = args.batch_size
     generated_views_num = args.v
     topk_views_cl = args.k
@@ -473,6 +473,7 @@ def cl_exp(args):
     best_test_acc = 0
     best_test_std = 0
     test_accs = []
+    test_stds = []
     logger.info('================')
     logger.info('start deterministic: {}'.format(args.start_deterministic))
     logger.info('decay method: {}'.format(args.decay_type))
@@ -493,6 +494,7 @@ def cl_exp(args):
         if epoch % log_interval == 0:
             test_acc, test_std = eval_acc(model, data_eval_loader, device)
             test_accs.append(test_acc)
+            test_stds.append(test_std)
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 best_test_std = test_std
@@ -511,6 +513,8 @@ def cl_exp(args):
     elapsed_time = end_time_obj - start_time_obj
     print('Elapsed Time: {}\n'.format(elapsed_time))
     logger.info('Elapsed Time: {}\n'.format(elapsed_time))
+    logger.info('val: {}'.format(test_accs))
+    logger.info('test: {}'.format(test_stds))
 
 
     
