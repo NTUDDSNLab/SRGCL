@@ -25,14 +25,11 @@ def arg_parse():
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector (cosine, l2_norm)')
     parser.add_argument('--eta', type=float, default=1.0, help='0.1, 1.0, 10, 100, 1000')
     parser.add_argument('--batch_size', type=int, default=128, help='128, 256, 512, 1024')
-    parser.add_argument('--start_deterministic', type=int, default=20, help='The epoch starts to use exactly topk in temperature sampling')
     parser.add_argument('--decay_type', type=str, default='exponential', help='exponential, cosine')
     parser.add_argument('--init_temp', type=float, default=1.0, help='Set initial temperature')
     parser.add_argument('--exp_factor', type=float, default=0.1, help='exponential method factor')
-    parser.add_argument('--cosine_factor', type=float, default=0.5, help='cosine method factor')
     parser.add_argument('--log_interval', type=int, default=10)
     parser.add_argument('--ckpt', type=bool, default=True)
     parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm', help='')
     return parser.parse_args()
-
 
