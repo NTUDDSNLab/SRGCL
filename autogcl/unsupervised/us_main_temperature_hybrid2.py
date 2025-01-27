@@ -43,15 +43,12 @@ import math
 import random
 import collections
 from aug_output import get_augmentation
-
-
-
-
 sys.path.append(os.path.abspath(os.path.join('..')))
 from datasets import get_dataset
 from view_generator import ViewGenerator, GIN_NodeWeightEncoder
-
 from IPython import embed
+
+# os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 def arg_parse():
     parser = argparse.ArgumentParser(description='GcnInformax Arguments.')
@@ -65,12 +62,12 @@ def arg_parse():
     parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm', help='')
+    parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm_hybrid2', help='')
     parser.add_argument('--batch_size', type=int, default = 128, help='')
     parser.add_argument('--epochs', type=int, default = 30, help='')
 
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
-    parser.add_argument('--v', type=int, default=50, help='number of views each generation')
+    parser.add_argument('--v', type=int, default=150, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
     parser.add_argument('--start_deterministic', type=int, default=20, help='The epoch starts to use exactly topk in temperature sampling')
     parser.add_argument('--decay_type', type=str, default='exponential', help='exponential, cosine')
@@ -220,81 +217,46 @@ def loss_cl(x1, x2):
     loss = (loss_a + loss_b) / 2
     return loss
 
+def generate_data_batch_augmentation(data_batch, generated_views_num=75):
+    aug_ratio = 0.2
+    augmentations = []
+    for _ in range(generated_views_num):
+        aug_data_list = []
+        for graph in data_batch.to_data_list():
+            n = np.random.randint(3)
+            if n == 0:
+                graph.edge_index, _, graph_node_mask = dropout_node(graph.edge_index, aug_ratio)
+                graph_node_mask = graph_node_mask.cpu().detach().numpy().astype(int)
+                feature_size = graph.x.shape[1]
+                graph_node_mask_2d = np.tile(graph_node_mask, (feature_size, 1))
+                graph_node_mask_2d = torch.from_numpy(np.transpose(graph_node_mask_2d)).to(device)
+                graph.x = graph.x * graph_node_mask_2d
+                aug_data_list.append(graph)
+            elif n == 1:
+                graph.edge_index, _ = dropout_edge(graph.edge_index, aug_ratio)
+                aug_data_list.append(graph)
+                # graph.edge_index, _ = add_random_edge(graph.edge_index, aug_ratio)
+                # graph.edge_index = graph.edge_index.to(torch.long)
+                # aug_data_list.append(graph)
+            elif n == 2:
+                graph.x, _ = mask_feature(graph.x, p=aug_ratio, mode='all')
+                aug_data_list.append(graph)
+        augmented_data_batch = Batch.from_data_list(aug_data_list)
+        augmentations.append(augmented_data_batch)
+    return augmentations
+
 def calculate_distance(data_batch1, data_batch2, anchor_model, selector):    
     anchor_x = anchor_model(data_batch1)
     aug_x = anchor_model(data_batch2)
-    if(selector == 'cosine'):
-        cosine_sim = F.cosine_similarity(anchor_x, aug_x)
-        distances = 1 - cosine_sim  # Convert similarity to distance
-    elif(selector == 'l2_norm'):
-        distances = torch.diag(torch.cdist(anchor_x, aug_x, p=2))
-    else:
-        raise ValueError('Invalid selector')
-    return distances.mean().item()
-
-def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, data_loader, device, selector, generated_views_num=50, topk_views_cl=2):
-    loss_all = 0
-    model.train()
-    total_graphs = 0
-    generated_views_num = int(generated_views_num / 2)
-
-    for data in data_loader:
-
-        anchor_model.load_state_dict(model.state_dict())
-        anchor_model.eval()
-        optimizer.zero_grad()
-        view_optimizer.zero_grad()
-
-        data = data.to(device)
-
-        for _ in range(generated_views_num):
-            distances1 = []
-            distances2 = []
-            sample1, view1 = view_gen1(data, True)
-            sample2, view2 = view_gen2(data, True)
-
-            distance = calculate_distance(data, view1, anchor_model, selector)
-            distances1.append((distance, view1, sample1))
-
-            distance = calculate_distance(data, view2, anchor_model, selector)
-            distances2.append((distance, view2, sample2))
-
-        distances1.sort(key=lambda x: x[0])
-        distances2.sort(key=lambda x: x[0])
-
-        closest_augmentations1 = distances1[:topk_views_cl]
-        closest_augmentations2 = distances2[:topk_views_cl]
-
-        closest_data_batch_augmentations1 = [aug for _, aug, _ in closest_augmentations1]
-        closest_sample_augmentations1 = [sample for _, _, sample in closest_augmentations1]
-
-        closest_data_batch_augmentations2 = [aug for _, aug, _ in closest_augmentations2]
-        closest_sample_augmentations2 = [sample for _, _, sample in closest_augmentations2]
-        sim_loss = F.mse_loss(closest_sample_augmentations1[0], closest_sample_augmentations2[0])
-        cl_loss = loss_cl(model(closest_data_batch_augmentations1[0]), model(closest_data_batch_augmentations2[0]))
-
-        # for i in range(len(closest_sample_augmentations1)):
-        #     for j in range(i + 1, len(closest_sample_augmentations2)):
-        #         if (i ==0  and j == 0):
-        #             continue
-        #         sim_loss += (1 - F.mse_loss(closest_sample_augmentations1[i], closest_sample_augmentations2[j]))
-
-        # for i in range(len(closest_data_batch_augmentations1)):
-        #     for j in range(i + 1, len(closest_data_batch_augmentations2)):
-        #         if (i == 0 and j == 0):
-        #             continue
-        #         cl_loss += loss_cl(model(closest_data_batch_augmentations1[i]), model(closest_data_batch_augmentations2[j]))
-
-        loss = sim_loss + cl_loss
-
-        loss_all += loss.item() * data.num_graphs
-        total_graphs += data.num_graphs
-
-        loss.backward()        
-        optimizer.step()
-        view_optimizer.step()
-    loss_all /= total_graphs
-    return loss_all
+    with torch.no_grad():
+        if(selector == 'cosine'):
+            cosine_sim = F.cosine_similarity(anchor_x, aug_x)
+            distances = 1 - cosine_sim  # Convert similarity to distance
+        elif(selector == 'l2_norm'):
+            distances = torch.diag(torch.cdist(anchor_x, aug_x, p=2))
+        else:
+            raise ValueError('Invalid selector')
+        return distances.mean().item()
 
 def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
     # 計算進度比例
@@ -315,10 +277,10 @@ def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_
     
     return max(0, min(init_temp, temperature))
 
-def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
+def train_cl_with_sim_loss_temperature_hybrid2(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
                           data_loader, device, selector, current_epoch, max_epoch, start_deterministic,
                           init_temp, cosine_factor, exp_factor,
-                          decay_method, generated_views_num=50, topk_views_cl=2):
+                          decay_method, generated_views_num=150, topk_views_cl=2):
     loss_all = 0
     model.train()
     total_graphs = 0
@@ -333,20 +295,26 @@ def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, mod
         anchor_model.eval()
         optimizer.zero_grad()
         view_optimizer.zero_grad()
-
         data = data.to(device)
+
+        data_batch_augmentations = generate_data_batch_augmentation(data, generated_views_num)
+        distances = []
+        for aug in data_batch_augmentations:
+            with torch.no_grad():
+                distance = calculate_distance(data, aug, anchor_model, selector)
+                distances.append((distance, aug))
+
         distances1 = []
         distances2 = []
-
-        for _ in range(generated_views_num):
+        for _ in range(round(generated_views_num / 2)):
             sample1, view1 = view_gen1(data, True)
             sample2, view2 = view_gen2(data, True)
+            with torch.no_grad():
+                distance = calculate_distance(data, view1, anchor_model, selector)
+                distances1.append((distance, view1, sample1))
 
-            distance = calculate_distance(data, view1, anchor_model, selector)
-            distances1.append((distance, view1, sample1))
-
-            distance = calculate_distance(data, view2, anchor_model, selector)
-            distances2.append((distance, view2, sample2))
+                distance = calculate_distance(data, view2, anchor_model, selector)
+                distances2.append((distance, view2, sample2))
 
         # Apply temperature-based selection
         if temperature > 0:
@@ -367,29 +335,33 @@ def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, mod
             closest_augmentations1 = distances1[:topk_views_cl]
             closest_augmentations2 = distances2[:topk_views_cl]
 
-        # closest_data_batch_augmentations1 = [aug for _, aug, _ in closest_augmentations1]
-        # closest_sample_augmentations1 = [sample for _, _, sample in closest_augmentations1]
-        # closest_data_batch_augmentations2 = [aug for _, aug, _ in closest_augmentations2]
-        # closest_sample_augmentations2 = [sample for _, _, sample in closest_augmentations2]
-        _, closest_data_batch_augmentations1, closest_sample_augmentations1 = zip(*closest_augmentations1)
-        _, closest_data_batch_augmentations2, closest_sample_augmentations2 = zip(*closest_augmentations2)
+        _, _, closest_sample_augmentations1 = zip(*closest_augmentations1)
+        _, _, closest_sample_augmentations2 = zip(*closest_augmentations2)
 
 
         # Calculate losses
         sim_loss = F.mse_loss(closest_sample_augmentations1[0], closest_sample_augmentations2[0])
-        cl_loss = loss_cl(model(closest_data_batch_augmentations1[0]), model(closest_data_batch_augmentations2[0]))
+        all_distances = [(d[0], d[1]) for d in distances]  # From distances
+        all_distances += [(d[0], d[1]) for d in distances1]  # From distances1
+        all_distances += [(d[0], d[1]) for d in distances2]  # From distances2
+        distances1.clear()
+        distances2.clear()
 
-        # for i in range(len(closest_sample_augmentations1)):
-        #     for j in range(i + 1, len(closest_sample_augmentations2)):
-        #         if (i == 0 and j == 0):
-        #             continue
-        #         sim_loss += (1 - F.mse_loss(closest_sample_augmentations1[i], closest_sample_augmentations2[j]))
 
-        # for i in range(len(closest_data_batch_augmentations1)):
-        #     for j in range(i + 1, len(closest_data_batch_augmentations2)):
-        #         if (i == 0 and j == 0):
-        #             continue
-        #         cl_loss += loss_cl(model(closest_data_batch_augmentations1[i]), model(closest_data_batch_augmentations2[j]))
+        if temperature > 0:
+            # Extract distances and calculate weights using temperature
+            all_dist_values = torch.tensor([d[0] for d in all_distances])
+            weights = torch.softmax(-all_dist_values / temperature, dim=0)
+
+            # Sample two indices based on weights
+            indices = torch.multinomial(weights, 2, replacement=False)
+            selected_data = [all_distances[i.item()][1] for i in indices]
+        else:
+            # Deterministic selection for the two smallest distances
+            all_distances.sort(key=lambda x: x[0])
+            selected_data = [all_distances[0][1], all_distances[1][1]]
+        all_distances.clear()
+        cl_loss = loss_cl(model(selected_data[0]), model(selected_data[1]))
 
         loss = sim_loss + cl_loss
         loss_all += loss.item() * data.num_graphs
@@ -486,7 +458,7 @@ def cl_exp(args):
     for epoch in range(1, epochs+1):
         # train_loss = train_cl(view_gen1, view_gen2, view_optimizer, model, optimizer, data_loader, device)
         # train_loss = train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, data_loader, device, selector, generated_views_num, topk_views_cl)
-        train_loss = train_cl_with_sim_loss_temperature(
+        train_loss = train_cl_with_sim_loss_temperature_hybrid2(
             view_gen1, view_gen2, view_optimizer, model, anchor_model, 
             optimizer, data_loader, device, selector, epoch, 
             epochs+1, start_deterministic,
@@ -504,6 +476,8 @@ def cl_exp(args):
             logger.info("*" * 50)
             logger.info("Evaluating embedding...")
             logger.info('Epoch: {}, Test Acc: {:.2f} ± {:.2f}'.format(epoch, test_acc*100, test_std*100))
+            # torch.cuda.empty_cache()
+            # torch.cuda.ipc_collect()
     logger.info('Best Test Acc: {:.2f} ± {:.2f}'.format(best_test_acc*100, best_test_std*100))
     if isSaveckpt:
         torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))

@@ -15,3 +15,5 @@ graphcl/pretrain/
 autogcl/data/
 adgcl/data/
 countEval_AutoGCL.py
+countEval_graphcl.py
+countEval_graphcl_hybrid2.py
