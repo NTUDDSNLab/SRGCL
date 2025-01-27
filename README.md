@@ -2,7 +2,7 @@
 
 nameA, nameB, nameC, nameD, nameE
 
-## Paper, Poster and Presentation
+## Paper
 
 ![framework](framework.png)
 
