@@ -1,4 +1,4 @@
-# SAFGCL(GraphCL)
+# SRGCL(GraphCL)
 ## Parameters
 You can adjust the following parameters when running the example script:
 

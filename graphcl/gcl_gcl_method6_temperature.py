@@ -174,24 +174,12 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
     # return distances.mean().item()
     return distance
 
-def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
-    # 計算進度比例
-    progress = current_epoch / start_deterministic
-    
-    if decay_method == 'exponential':
-        # 在 start_deterministic 時達到接近 0 的溫度
-        temperature = (exp_factor*init_temp) ** (current_epoch * (max_epoch/start_deterministic))
-    elif decay_method == 'cosine':
-        # 確保在 start_deterministic 時溫度接近 0
-        if current_epoch >= start_deterministic:
-            temperature = 0
-        else:
-            # 使用餘弦函數，在 start_deterministic 時達到最低點
-            temperature = (cosine_factor*init_temp)*(math.cos(progress * math.pi) + 1)
-    else:
-        raise ValueError("Invalid decay method. Use 'exponential' or 'cosine'")
-    
-    return max(0, min(init_temp, temperature))
+
+def calculate_temperature(A0, k, current_epoch):
+    temperature = A0*math.exp(-k*current_epoch)
+    return max(0, min(1, temperature))
+
+
 
 def optimized_subgraph_sampling(original_graph, aug_ratio):
     graph = original_graph.clone()
@@ -239,9 +227,8 @@ def optimized_subgraph_sampling(original_graph, aug_ratio):
 
 
 
-def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
-                                data_batch, anchor_model, current_epoch=0, max_epoch=30, 
-                                  start_deterministic=20, decay_method='exponential',
+def generate_views_with_temperature(exp_factor,data_batch, 
+                                anchor_model, current_epoch=0,
                                   generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
     aug_ratio = args.r
     aug_data_list_1 = []
@@ -250,15 +237,15 @@ def generate_views_with_temperature(init_temp, cosine_factor, exp_factor,
     augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0, 'subgraph': 0}
     
     # 計算當前溫度
-    temperature = calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method)
+    temperature = calculate_temperature(A0=1.0, k=exp_factor, current_epoch=current_epoch)
     
     for graph in data_batch.to_data_list():        
         original_graph = graph.clone()
         aug_data_list = []
         
         if augmentation_type == 'hybrid':
-            hybrid_count = round(generated_views_num / 4)
-            aug_types = ['dnodes', 'pedges', 'mask_nodes', 'subgraph']
+            hybrid_count = round(generated_views_num / 3)
+            aug_types = ['dnodes', 'pedges', 'mask_nodes']
             hybrid_augmentation_list = aug_types * hybrid_count
         else:
             hybrid_augmentation_list = [augmentation_type] * generated_views_num
@@ -358,19 +345,16 @@ if __name__ == '__main__':
     generated_views_num = args.v
     topk_views_cl = args.k
     decay_method = args.decay_type
-    start_deterministic = args.start_deterministic
     log_interval = args.log_interval
     batch_size = args.batch_size
     lr = args.lr
     DS = args.DS
     selector = args.d
     augmentation_type = args.aug
-    init_temp = args.init_temp
-    cosine_factor = args.cosine_factor
     exp_factor = args.exp_factor
 
-    # path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
+    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('Start Time: {}'.format(start_time))
     log_file_path = os.path.join(args.save, f'log_{augmentation_type}.txt')
@@ -426,15 +410,10 @@ if __name__ == '__main__':
             data = data.to(device)
 
             aug_data_batch_1,  aug_data_batch_2= generate_views_with_temperature(
-                                                    init_temp,
-                                                    cosine_factor, 
                                                     exp_factor,
                                                     data,
                                                     anchor_model,
                                                     current_epoch=epoch,
-                                                    max_epoch=epochs,
-                                                    start_deterministic=start_deterministic,
-                                            decay_method=decay_method,  # 或 'exponential'
                                             generated_views_num=generated_views_num,
                                             augmentation_type=augmentation_type, 
                                             total_augmentation_counts=total_augmentation_counts
@@ -491,6 +470,6 @@ if __name__ == '__main__':
     log_file.write(f'Final Augmentation Ratios: {final_ratio}\n')
     log_file.close()
 
-    with open('logs/log_' + args.DS + '_' + args.aug + '_decay_method_' + args.decay_type + '_selector_'+args.d , 'a+') as f:
+    with open('logs/log_' + args.DS + '_' + args.aug + '_selector_'+args.d + f'_exp_factor_{exp_factor}_generate_views_{generated_views_num}', 'a+') as f:
         f.write('Final accuracy: {},{:.2f}\n'.format(args.DS, test_acc*100))
         f.write('Best accuracy: {},{:.2f}\n'.format(args.DS, best_test_acc*100))
