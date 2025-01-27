@@ -169,6 +169,18 @@ def calculate_distance(original_graph, aug_graph, anchor_model, selector):
         distance = 1 - cosine_sim  # Convert similarity to distance
     elif(selector == 'l2_norm'):
         distance = torch.dist(original_embedding, aug_embedding, p=2)
+    elif(selector == 'l1_norm'):
+        distance = torch.dist(original_embedding, aug_embedding, p=1)
+    elif(selector == 'kl_divergence'):
+        kl_div = nn.KLDivLoss(reduction='batchmean')
+        distance = kl_div(F.log_softmax(original_embedding, dim=1), F.softmax(aug_embedding, dim=1))
+    elif(selector == 'mahalanobis'):
+        diff = original_embedding - aug_embedding
+        cov_matrix = torch.cov(diff.T)
+        inv_cov_matrix = torch.linalg.inv(cov_matrix + torch.eye(cov_matrix.size(0)).to(device) * 1e-5)
+        distance = torch.sqrt(torch.mm(torch.mm(diff, inv_cov_matrix), diff.T).diag())
+    elif(selector == 'wasserstein'):
+        distance = torch.cdist(original_embedding, aug_embedding, p=1).mean()
     else:
         raise ValueError('Invalid selector')
     # return distances.mean().item()

@@ -29,7 +29,7 @@ Note: Place your data in the current directory.
 ## GraphCL
 
 ### Run
-Please check the README in /graphcl for more details.
+Please check the README in graphcl/ for more details.
 
 ```shell
 cd graphcl
@@ -39,7 +39,7 @@ CUDA_VISIBLE_DEVICES=0 python gcl_gcl_method6_temperature.py --DS='MUTAG' --aug=
 ## AutoGCL
 
 ### Run
-Please check the README in /autogcl for more details.
+Please check the README in autogcl/ for more details.
 
 ```shell
 cd autogcl/unsupervised

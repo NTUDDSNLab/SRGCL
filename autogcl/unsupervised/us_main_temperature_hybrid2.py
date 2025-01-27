@@ -254,6 +254,17 @@ def calculate_distance(data_batch1, data_batch2, anchor_model, selector):
             distances = 1 - cosine_sim  # Convert similarity to distance
         elif(selector == 'l2_norm'):
             distances = torch.diag(torch.cdist(anchor_x, aug_x, p=2))
+        elif(selector == 'l1_norm'):
+            distances = torch.cdist(anchor_x, aug_x, p=1)
+        elif(selector == 'kl_divergence'):
+            distances = F.kl_div(F.log_softmax(anchor_x, dim=-1), F.softmax(aug_x, dim=-1), reduction='batchmean')
+        elif(selector == 'mahalanobis'):
+            cov_matrix = torch.cov(anchor_x.T)
+            inv_cov_matrix = torch.linalg.inv(cov_matrix)
+            diff = anchor_x - aug_x
+            distances = torch.sqrt(torch.diag(diff @ inv_cov_matrix @ diff.T))
+        elif(selector == 'wasserstein'):
+            distances = torch.cdist(anchor_x, aug_x, p=2).mean(dim=1)
         else:
             raise ValueError('Invalid selector')
         return distances.mean().item()
