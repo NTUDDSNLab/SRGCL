@@ -271,7 +271,7 @@ def calculate_temperature(A0, k, current_epoch):
 
 def train_cl_with_sim_loss_temperature_hybrid2(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
                           data_loader, device, selector, current_epoch, exp_factor,
-                          decay_method, generated_views_num=150, topk_views_cl=2):
+                          generated_views_num=150, topk_views_cl=2):
     loss_all = 0
     model.train()
     total_graphs = 0
@@ -524,4 +524,3 @@ if __name__ == '__main__':
     args = arg_parse()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cl_exp(args)
-
