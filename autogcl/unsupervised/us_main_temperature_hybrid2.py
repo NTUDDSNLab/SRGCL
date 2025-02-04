@@ -69,11 +69,7 @@ def arg_parse():
     parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
     parser.add_argument('--v', type=int, default=150, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
-    parser.add_argument('--start_deterministic', type=int, default=20, help='The epoch starts to use exactly topk in temperature sampling')
-    parser.add_argument('--decay_type', type=str, default='exponential', help='exponential, cosine')
-    parser.add_argument('--init_temp', type=float, default=1.0, help='Set initial temperature')
-    parser.add_argument('--exp_factor', type=float, default=0.95, help='exponential method factor')
-    parser.add_argument('--cosine_factor', type=float, default=0.5, help='cosine method factor')
+    parser.add_argument('--exp_factor', type=float, default=0.1, help='exponential method factor')
     parser.add_argument('--ckpt', type=bool, default=True)
 
     return parser.parse_args()
@@ -269,28 +265,12 @@ def calculate_distance(data_batch1, data_batch2, anchor_model, selector):
             raise ValueError('Invalid selector')
         return distances.mean().item()
 
-def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
-    # 計算進度比例
-    progress = current_epoch / start_deterministic
-    
-    if decay_method == 'exponential':
-        # 在 start_deterministic 時達到接近 0 的溫度
-        temperature = (exp_factor*init_temp) ** (current_epoch * (max_epoch/start_deterministic))
-    elif decay_method == 'cosine':
-        # 確保在 start_deterministic 時溫度接近 0
-        if current_epoch >= start_deterministic:
-            temperature = 0
-        else:
-            # 使用餘弦函數，在 start_deterministic 時達到最低點
-            temperature = (cosine_factor*init_temp)*(math.cos(progress * math.pi) + 1)
-    else:
-        raise ValueError("Invalid decay method. Use 'exponential' or 'cosine'")
-    
-    return max(0, min(init_temp, temperature))
+def calculate_temperature(A0, k, current_epoch):
+    temperature = A0*math.exp(-k*current_epoch)
+    return max(0, min(1, temperature))
 
 def train_cl_with_sim_loss_temperature_hybrid2(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
-                          data_loader, device, selector, current_epoch, max_epoch, start_deterministic,
-                          init_temp, cosine_factor, exp_factor,
+                          data_loader, device, selector, current_epoch, exp_factor,
                           decay_method, generated_views_num=150, topk_views_cl=2):
     loss_all = 0
     model.train()
@@ -298,8 +278,7 @@ def train_cl_with_sim_loss_temperature_hybrid2(view_gen1, view_gen2, view_optimi
     generated_views_num = int(generated_views_num / 2)
 
     # Calculate temperature for current epoch
-    temperature = calculate_temperature(init_temp, cosine_factor, exp_factor,
-                                     current_epoch, max_epoch, start_deterministic, decay_method)
+    temperature = calculate_temperature(A0=1.0, k=exp_factor, current_epoch=current_epoch)
 
     for data in data_loader:
         anchor_model.load_state_dict(model.state_dict())
@@ -395,7 +374,7 @@ def eval_acc(model, data_loader, device):
 def cl_exp(args):
     set_seed(args.seed)
     save_name = args.save
-    args.save = '{}-{}-{}-{}-{}'.format(args.decay_type ,args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
+    args.save = '{}-{}-{}-{}'.format(args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
     args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
     # create_exp_dir(args.save, glob.glob('*.py'))
     create_exp_dir(args.save, None)
@@ -412,10 +391,6 @@ def cl_exp(args):
     device_id = 'cuda:%d' % (args.gpu)
     device = torch.device(device_id if torch.cuda.is_available() else 'cpu')
     
-    decay_method = args.decay_type
-    start_deterministic = args.start_deterministic
-    init_temp = args.init_temp
-    cosine_factor = args.cosine_factor
     exp_factor = args.exp_factor
     
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -460,10 +435,6 @@ def cl_exp(args):
     best_test_std = 0
     test_accs = []
     logger.info('================')
-    logger.info('start deterministic: {}'.format(args.start_deterministic))
-    logger.info('decay method: {}'.format(args.decay_type))
-    logger.info('init temp: {}'.format(args.init_temp))
-    logger.info('cosine factor: {}'.format(args.cosine_factor))
     logger.info('exp factor: {}'.format(args.exp_factor))
     logger.info('================')
     for epoch in range(1, epochs+1):
@@ -471,10 +442,8 @@ def cl_exp(args):
         # train_loss = train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, data_loader, device, selector, generated_views_num, topk_views_cl)
         train_loss = train_cl_with_sim_loss_temperature_hybrid2(
             view_gen1, view_gen2, view_optimizer, model, anchor_model, 
-            optimizer, data_loader, device, selector, epoch, 
-            epochs+1, start_deterministic,
-            init_temp, cosine_factor, exp_factor,
-            decay_method, generated_views_num, topk_views_cl)
+            optimizer, data_loader, device, selector, epoch, exp_factor,
+            generated_views_num, topk_views_cl)
         logger.info('Epoch: {}, Loss: {:.4f}'.format(epoch, train_loss))
         if epoch % log_interval == 0:
             test_acc, test_std = eval_acc(model, data_eval_loader, device)
