@@ -471,8 +471,7 @@ def cl_exp(args):
         train_loss = train_cl_with_sim_loss_temperature(
             view_gen1, view_gen2, view_optimizer, model, anchor_model, 
             optimizer, data_loader, device, selector, epoch, 
-            epochs+1, exp_factor,
-            generated_views_num, topk_views_cl)
+            exp_factor, generated_views_num, topk_views_cl)
         logger.info('Epoch: {}, Loss: {:.4f}'.format(epoch, train_loss))
         if epoch % log_interval == 0:
             test_acc, test_std = eval_acc(model, data_eval_loader, device)
