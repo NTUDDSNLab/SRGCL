@@ -308,8 +308,7 @@ def calculate_temperature(A0, k, current_epoch):
     return max(0, min(1, temperature))
 
 def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
-                          data_loader, device, selector, current_epoch, exp_factor,
-                          decay_method, generated_views_num=50, topk_views_cl=2):
+                          data_loader, device, selector, current_epoch, exp_factor, generated_views_num=50, topk_views_cl=2):
     loss_all = 0
     model.train()
     total_graphs = 0
