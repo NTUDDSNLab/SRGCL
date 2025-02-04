@@ -307,28 +307,12 @@ def train_cl_with_sim_loss(view_gen1, view_gen2, view_optimizer, model, anchor_m
     loss_all /= total_graphs
     return loss_all
 
-def calculate_temperature(init_temp,cosine_factor,exp_factor,current_epoch, max_epoch, start_deterministic, decay_method='exponential'):
-    # 計算進度比例
-    progress = current_epoch / start_deterministic
-    
-    if decay_method == 'exponential':
-        # 在 start_deterministic 時達到接近 0 的溫度
-        temperature = (exp_factor*init_temp) ** (current_epoch * (max_epoch/start_deterministic))
-    elif decay_method == 'cosine':
-        # 確保在 start_deterministic 時溫度接近 0
-        if current_epoch >= start_deterministic:
-            temperature = 0
-        else:
-            # 使用餘弦函數，在 start_deterministic 時達到最低點
-            temperature = (cosine_factor*init_temp)*(math.cos(progress * math.pi) + 1)
-    else:
-        raise ValueError("Invalid decay method. Use 'exponential' or 'cosine'")
-    
-    return max(0, min(init_temp, temperature))
+def calculate_temperature(A0, k, current_epoch):
+    temperature = A0*math.exp(-k*current_epoch)
+    return max(0, min(1, temperature))
 
 def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
-                          data_loader, device, selector, current_epoch, max_epoch, start_deterministic,
-                          init_temp, cosine_factor, exp_factor,
+                          data_loader, device, selector, current_epoch, exp_factor,
                           decay_method, generated_views_num=50, topk_views_cl=2):
     loss_all = 0
     model.train()
@@ -336,8 +320,7 @@ def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, mod
     generated_views_num = int(generated_views_num / 2)
 
     # Calculate temperature for current epoch
-    temperature = calculate_temperature(init_temp, cosine_factor, exp_factor,
-                                     current_epoch, max_epoch, start_deterministic, decay_method)
+    temperature = calculate_temperature(A0=1.0, k=exp_factor, current_epoch=current_epoch)
 
     for data in data_loader:
         anchor_model.load_state_dict(model.state_dict())
@@ -500,9 +483,8 @@ def cl_exp(args):
         train_loss = train_cl_with_sim_loss_temperature(
             view_gen1, view_gen2, view_optimizer, model, anchor_model, 
             optimizer, data_loader, device, selector, epoch, 
-            epochs+1, start_deterministic,
-            init_temp, cosine_factor, exp_factor,
-            decay_method, generated_views_num, topk_views_cl)
+            epochs+1, exp_factor,
+            generated_views_num, topk_views_cl)
         logger.info('Epoch: {}, Loss: {:.4f}'.format(epoch, train_loss))
         if epoch % log_interval == 0:
             test_acc, test_std = eval_acc(model, data_eval_loader, device)
