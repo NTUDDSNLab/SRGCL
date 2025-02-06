@@ -239,16 +239,14 @@ def optimized_subgraph_sampling(original_graph, aug_ratio):
 
 
 
-def generate_views_with_temperature(exp_factor,data_batch, 
-                                anchor_model, current_epoch=0,
-                                  generated_views_num=50, augmentation_type='dnodes', total_augmentation_counts=None):
+def generate_views_with_temperature_topk(exp_factor, data_batch, 
+                                        anchor_model, current_epoch=0,
+                                        generated_views_num=50, augmentation_type='dnodes', 
+                                        total_augmentation_counts=None, topk_views_cl=2):
     aug_ratio = args.r
-    aug_data_list_1 = []
-    aug_data_list_2 = []
-
+    grouped_aug_graphs = [[] for _ in range(topk_views_cl)]
     augmentation_counts = {'dnodes': 0, 'pedges': 0, 'mask_nodes': 0, 'subgraph': 0}
     
-    # 計算當前溫度
     temperature = calculate_temperature(A0=1.0, k=exp_factor, current_epoch=current_epoch)
     
     for graph in data_batch.to_data_list():        
@@ -287,33 +285,35 @@ def generate_views_with_temperature(exp_factor,data_batch,
         for aug_graph, aug_type in aug_data_list:
             distance = calculate_distance(original_graph, aug_graph, anchor_model, selector)
             distances.append((distance, aug_graph, aug_type))
-            
-        # 根據溫度進行選擇
+        
         if temperature > 0:
-            # 使用溫度控制的隨機選擇
             weights = torch.softmax(-torch.tensor([d[0] for d in distances]) / temperature, dim=0)
-            indices = torch.multinomial(weights, 2, replacement=False)
+            indices = torch.multinomial(weights, topk_views_cl, replacement=False)
             selected_graphs = [distances[i.item()][1] for i in indices]
             selected_graphs_aug_counts = [distances[i.item()][2] for i in indices]
-            selected_graphs_aug_counts = selected_graphs_aug_counts[:2]
         else:
-            # 完全確定性選擇
             distances.sort(key=lambda x: x[0])
-            selected_graphs = [distances[0][1], distances[1][1]]
-            selected_graphs_aug_counts = [distances[0][2], distances[1][2]]
+            selected_graphs = [distances[i][1] for i in range(min(topk_views_cl, len(distances)))]
+            selected_graphs_aug_counts = [distances[i][2] for i in range(min(topk_views_cl, len(distances)))]
         
         for aug_count in selected_graphs_aug_counts:
             augmentation_counts[aug_count] += 1
-        aug_data_list_1.append(selected_graphs[0])
-        aug_data_list_2.append(selected_graphs[1])
+        
+        for i in range(len(selected_graphs)):
+            grouped_aug_graphs[i].append(selected_graphs[i])
+    
     if total_augmentation_counts is not None:
         for k in augmentation_counts:
             total_augmentation_counts[k] += augmentation_counts[k]
+    
+    data_batches = []
+    for group in grouped_aug_graphs:
+        data_batch = Batch.from_data_list(group)
+        data_batch = data_batch.to(device)
+        data_batches.append(data_batch)
+    
+    return data_batches
 
-    augmented_data_batch_1 = Batch.from_data_list(aug_data_list_1)
-    augmented_data_batch_2 = Batch.from_data_list(aug_data_list_2)
-
-    return augmented_data_batch_1, augmented_data_batch_2
 
 def create_exp_dir(path, scripts_to_save=None):
     if not os.path.exists(path):
@@ -347,7 +347,6 @@ if __name__ == '__main__':
     save_name = args.save
     args.save = '{}-{}-{}-{}'.format(args.DS, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
     args.save = os.path.join('unsupervised_exp', save_name, args.DS, args.save)
-    # create_exp_dir(args.save, glob.glob('*.py'))
     create_exp_dir(args.save, None)
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     accuracies = {'val':[], 'test':[]}
@@ -366,7 +365,6 @@ if __name__ == '__main__':
     exp_factor = args.exp_factor
 
     path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', DS)
-    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data')
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print('Start Time: {}'.format(start_time))
     log_file_path = os.path.join(args.save, f'log_{augmentation_type}.txt')
@@ -416,27 +414,29 @@ if __name__ == '__main__':
         for data in dataloader:
             anchor_model.load_state_dict(model.state_dict())
             anchor_model.eval()
-            # data, data_aug = data
             data, _ = data
-            # data_aug = get_augmentation(data, args.aug)
             data = data.to(device)
 
-            aug_data_batch_1,  aug_data_batch_2= generate_views_with_temperature(
-                                                    exp_factor,
-                                                    data,
-                                                    anchor_model,
-                                                    current_epoch=epoch,
+            grouped_aug_graphs_batches = generate_views_with_temperature_topk(
+                                            exp_factor,
+                                            data,
+                                            anchor_model,
+                                            current_epoch=epoch,
                                             generated_views_num=generated_views_num,
                                             augmentation_type=augmentation_type, 
-                                            total_augmentation_counts=total_augmentation_counts
+                                            total_augmentation_counts=total_augmentation_counts,
+                                            topk_views_cl=topk_views_cl
             )
-
-            optimizer.zero_grad()
-            x_aug1 = model(aug_data_batch_1.x, aug_data_batch_1.edge_index, aug_data_batch_1.batch, aug_data_batch_1.num_graphs)
-            x_aug2 = model(aug_data_batch_2.x, aug_data_batch_2.edge_index, aug_data_batch_2.batch, aug_data_batch_2.num_graphs)
-
             
-            loss = model.loss_cal(x_aug1, x_aug2)
+            x_aug = []
+            for batch in grouped_aug_graphs_batches:
+                x_aug.append(model(batch.x, batch.edge_index, batch.batch, batch.num_graphs))
+            
+            optimizer.zero_grad()
+            loss = 0
+            for i in range(len(x_aug)):
+                for j in range(i + 1, len(x_aug)):
+                    loss += model.loss_cal(x_aug[i], x_aug[j])
             loss_all += loss.item() * data.num_graphs
             loss.backward()
             optimizer.step()
@@ -451,7 +451,7 @@ if __name__ == '__main__':
             accuracies['val'].append(test_acc)
             accuracies['test'].append(test_std)
             print('Epoch: {}, Test Acc: {:.2f} '.format(epoch, test_acc*100))
-            log_file.write('Epoch: {}, Test Acc: {:.2f} '.format(epoch, test_acc*100))
+            log_file.write('Epoch: {}, Test Acc: {:.2f}\n'.format(epoch, test_acc*100))
             
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
@@ -459,9 +459,9 @@ if __name__ == '__main__':
                 if isSaveckpt:
                     torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_best.pth'))
             
-    log_file.write('Final Test Acc: {:.2f} '.format(test_acc*100))
+    log_file.write('Final Test Acc: {:.2f}\n'.format(test_acc*100))
     print('Final Test Acc: {:.2f} '.format(test_acc*100))
-    log_file.write('Best Test Acc: {:.2f} '.format(best_test_acc*100))
+    log_file.write('Best Test Acc: {:.2f}\n'.format(best_test_acc*100))
     print('Best Test Acc: {:.2f} '.format(best_test_acc*100))
     if isSaveckpt:
         torch.save(model.state_dict(), os.path.join(args.save, 'model', 'model_final.pth'))
@@ -481,7 +481,3 @@ if __name__ == '__main__':
     print("Final Augmentation Ratios:", final_ratio)
     log_file.write(f'Final Augmentation Ratios: {final_ratio}\n')
     log_file.close()
-
-    with open('logs/log_' + args.DS + '_' + args.aug + '_selector_'+args.d + f'_exp_factor_{exp_factor}_generate_views_{generated_views_num}', 'a+') as f:
-        f.write('Final accuracy: {},{:.2f}\n'.format(args.DS, test_acc*100))
-        f.write('Best accuracy: {},{:.2f}\n'.format(args.DS, best_test_acc*100))
