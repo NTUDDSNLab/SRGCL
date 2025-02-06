@@ -65,14 +65,14 @@ def arg_parse():
     parser.add_argument('--num-gc-layers', dest='num_gc_layers', type=int, default=5, help='Number of graph convolution layers before each pooling')
     parser.add_argument('--hidden-dim', dest='hidden_dim', type=int, default=128, help='')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--save', type=str, default = 'temperature_decay_l2_norm', help='')
+    parser.add_argument('--save', type=str, default = 'temperature_decay', help='')
     parser.add_argument('--batch_size', type=int, default = 128, help='')
     parser.add_argument('--epochs', type=int, default = 30, help='')
 
-    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector')
+    parser.add_argument('--d', type=str, default='l2_norm', help='Types of data selector, cosine, l2_norm, kl_divergence, wasserstein')
     parser.add_argument('--v', type=int, default=50, help='number of views each generation')
     parser.add_argument('--k', type=int, default=2, help='Top k views for contrastive learning')
-    parser.add_argument('--exp_factor', type=float, default=0.1, help='exponential method factor')
+    parser.add_argument('--exp_factor', type=float, default=0.4, help='exponential method factor')
     parser.add_argument('--ckpt', type=bool, default=True)
 
     return parser.parse_args()
@@ -309,7 +309,7 @@ def calculate_temperature(A0, k, current_epoch):
 
 def train_cl_with_sim_loss_temperature(view_gen1, view_gen2, view_optimizer, model, anchor_model, optimizer, 
                           data_loader, device, selector, current_epoch, exp_factor,
-                          decay_method, generated_views_num=50, topk_views_cl=2):
+                          generated_views_num=50, topk_views_cl=2):
     loss_all = 0
     model.train()
     total_graphs = 0
@@ -401,8 +401,8 @@ def eval_acc(model, data_loader, device):
 
 def cl_exp(args):
     set_seed(args.seed)
-    save_name = args.save
-    args.save = '{}-{}-{}-{}'.format(args.dataset, args.seed, args.save, time.strftime("%Y%m%d-%H%M%S"))
+    save_name = '{}_{}'.format(args.save, args.d)
+    args.save = '{}-{}-{}-{}-{}'.format(args.dataset, args.seed, args.save, args.exp_factor, time.strftime("%Y%m%d-%H%M%S"))
     args.save = os.path.join('unsupervised_exp', save_name, args.dataset, args.save)
     # create_exp_dir(args.save, glob.glob('*.py'))
     create_exp_dir(args.save, None)
