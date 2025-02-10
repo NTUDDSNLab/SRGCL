@@ -20,5 +20,5 @@ You can adjust the following parameters when running the example script:
 To run the unsupervised learning script, navigate to the `autogcl/unsupervised` directory and execute the following command:
 ```bash
 cd autogcl/unsupervised
-CUDA_VISIBLE_DEVICES=0 python us_main_temperature_hybrid2.py --dataset='MUTAG' --d='l2_norm' --v=50 --k=2
+CUDA_VISIBLE_DEVICES=0 python us_main_temperature.py --dataset='MUTAG' --d='l2_norm' --v=50 --k=2
 ```
