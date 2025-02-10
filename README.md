@@ -1,13 +1,5 @@
 # SRGCL: Self-Reinforcement Graph Contrastive Learning
 
-nameA, nameB, nameC, nameD, nameE
-
-## Paper
-
-![framework](framework.png)
-
-Please check our arXiv version [here](https://) for the full paper with supplementary.
-
 ## Requirement
 
 ```shell
@@ -44,18 +36,4 @@ Please check the README in autogcl/ for more details.
 ```shell
 cd autogcl/unsupervised
 CUDA_VISIBLE_DEVICES=0 python us_main_temperature_hybrid2.py --dataset='MUTAG'
-```
-
-
-## Citation
-
-If you find this work helpful, please kindly cite our [paper](https://).
-
-```latex
-@article{2025srgcl,
-  title={SRGCL: Self-Reinforcement Graph Contrastive Learning},
-  author={},
-  journal={arXiv preprint arXiv:},
-  year={2025}
-}
 ```
