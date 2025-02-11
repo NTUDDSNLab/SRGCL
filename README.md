@@ -1,4 +1,4 @@
-# SRGCL: Self-Reinforcement Graph Contrastive Learning
+# SRGCL: Self-Reinforced Graph Contrastive Learning
 
 ## Requirement
 
